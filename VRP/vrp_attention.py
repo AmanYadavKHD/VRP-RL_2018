@@ -1,4 +1,5 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
 class AttentionVRPActor(object):
     """A generic attention module for the attention in vrp model"""
@@ -9,16 +10,15 @@ class AttentionVRPActor(object):
         with tf.variable_scope(_scope+_name):
             # self.v: is a variable with shape [1 x dim]
             self.v = tf.get_variable('v',[1,dim],
-                       initializer=tf.contrib.layers.xavier_initializer())
+                       initializer=tf.initializers.glorot_uniform())
             self.v = tf.expand_dims(self.v,2)
             
-        self.emb_d = tf.layers.Conv1D(dim,1,_scope=_scope+_name+'/emb_d' ) #conv1d
-        self.emb_ld = tf.layers.Conv1D(dim,1,_scope=_scope+_name+'/emb_ld' ) #conv1d_2
-
-        self.project_d = tf.layers.Conv1D(dim,1,_scope=_scope+_name+'/proj_d' ) #conv1d_1
-        self.project_ld = tf.layers.Conv1D(dim,1,_scope=_scope+_name+'/proj_ld' ) #conv1d_3
-        self.project_query = tf.layers.Dense(dim,_scope=_scope+_name+'/proj_q' ) #
-        self.project_ref = tf.layers.Conv1D(dim,1,_scope=_scope+_name+'/proj_ref' ) #conv1d_4
+        self.emb_d = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name+'/emb_d' ).replace('/', '_')) #conv1d
+        self.emb_ld = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name+'/emb_ld' ).replace('/', '_')) #conv1d_2
+        self.project_d = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name+'/proj_d' ).replace('/', '_')) #conv1d_1
+        self.project_ld = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name+'/proj_ld' ).replace('/', '_')) #conv1d_3
+        self.project_query = tf.keras.layers.Dense(dim, name=(_scope+_name+'/proj_q' ).replace('/', '_')) #
+        self.project_ref = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name+'/proj_ref' ).replace('/', '_')) #conv1d_4
 
 
         self.C = C  # tanh exploration parameter
@@ -85,14 +85,14 @@ class AttentionVRPCritic(object):
         with tf.variable_scope(_scope+_name):
             # self.v: is a variable with shape [1 x dim]
             self.v = tf.get_variable('v',[1,dim],
-                       initializer=tf.contrib.layers.xavier_initializer())
+                       initializer=tf.initializers.glorot_uniform())
             self.v = tf.expand_dims(self.v,2)
             
-        self.emb_d = tf.layers.Conv1D(dim,1,_scope=_scope+_name +'/emb_d') #conv1d
-        self.project_d = tf.layers.Conv1D(dim,1,_scope=_scope+_name +'/proj_d') #conv1d_1
+        self.emb_d = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name +'/emb_d').replace('/', '_')) #conv1d
+        self.project_d = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name +'/proj_d').replace('/', '_')) #conv1d_1
         
-        self.project_query = tf.layers.Dense(dim,_scope=_scope+_name +'/proj_q') #
-        self.project_ref = tf.layers.Conv1D(dim,1,_scope=_scope+_name +'/proj_e') #conv1d_2
+        self.project_query = tf.keras.layers.Dense(dim, name=(_scope+_name +'/proj_q').replace('/', '_')) #
+        self.project_ref = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name +'/proj_e').replace('/', '_')) #conv1d_2
 
         self.C = C  # tanh exploration parameter
         self.tanh = tf.nn.tanh

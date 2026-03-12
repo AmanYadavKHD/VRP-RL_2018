@@ -1,4 +1,5 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
 class Attention(object):
     """A generic attention module for a decoder in seq2seq models"""
@@ -9,10 +10,10 @@ class Attention(object):
         with tf.variable_scope(_scope+_name):
             # self.v: is a variable with shape [1 x dim]
             self.v = tf.get_variable('v',[1,dim],
-                       initializer=tf.contrib.layers.xavier_initializer())
+                       initializer=tf.initializers.glorot_uniform())
             self.v = tf.expand_dims(self.v,2)
-        self.project_query = tf.layers.Dense(dim,_scope=_scope+_name +'/dense')
-        self.project_ref = tf.layers.Conv1D(dim,1,_scope=_scope+_name +'/conv1d')
+        self.project_query = tf.keras.layers.Dense(dim, name=(_scope+_name +'/dense').replace('/', '_'))
+        self.project_ref = tf.keras.layers.Conv1D(dim,1, name=(_scope+_name +'/conv1d').replace('/', '_'))
         self.C = C  # tanh exploration parameter
         self.tanh = tf.nn.tanh
 

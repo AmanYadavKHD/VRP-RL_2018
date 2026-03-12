@@ -30,8 +30,8 @@ def ParseParams():
 
     # Data
     parser.add_argument('--task', default='vrp10', help="Select the task to solve; i.e. tsp10")
-    parser.add_argument('--batch_size', default=128,type=int, help='Batch size in training')
-    parser.add_argument('--n_train', default=260000,type=int, help='Number of training steps')
+    parser.add_argument('--batch_size', default=32,type=int, help='Batch size in training')
+    parser.add_argument('--n_train', default=10000,type=int, help='Number of training steps')
     parser.add_argument('--test_size', default=1000,type=int, help='Number of problems in test set')
 
     # Network
@@ -68,8 +68,8 @@ def ParseParams():
 
     # Misc
     parser.add_argument('--stdout_print', default=True, type=str2bool, help='print control')
-    parser.add_argument("--gpu", default='3', type=str,help="gpu number.")
-    parser.add_argument('--log_interval', default=200,type=int, help='Log info every log_step steps')
+    parser.add_argument("--gpu", default='', type=str,help="gpu number.")
+    parser.add_argument('--log_interval', default=50,type=int, help='Log info every log_step steps')
     parser.add_argument('--test_interval', default=200,type=int, help='test every test_interval steps')
     parser.add_argument('--save_interval', default=10000,type=int, help='save every save_interval steps')
     parser.add_argument('--log_dir', type=str, default='logs')

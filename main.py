@@ -1,8 +1,10 @@
 import argparse
 import os
+os.environ['TF_USE_LEGACY_KERAS'] = '1'
 import numpy as np
 from tqdm import tqdm 
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import time
 
 from configs import ParseParams

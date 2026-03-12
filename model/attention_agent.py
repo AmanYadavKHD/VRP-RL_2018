@@ -1,4 +1,5 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import numpy as np
 import time
 from shared.embeddings import LinearEmbedding
@@ -51,7 +52,7 @@ class RLAgent(object):
                         rnn_layers=args['rnn_layers'],
                         _scope='Actor/')
         self.decoder_input = tf.get_variable('decoder_input', [1,1,args['embedding_dim']],
-                       initializer=tf.contrib.layers.xavier_initializer())
+                       initializer=tf.initializers.glorot_uniform())
 
         start_time  = time.time()
         if is_train:
@@ -243,8 +244,9 @@ class RLAgent(object):
                         hy = tf.squeeze(tf.matmul(tf.expand_dims(prob,1), e ) ,1)
 
                 with tf.variable_scope("Linear"):
-                    v = tf.squeeze(tf.layers.dense(tf.layers.dense(hy,args['hidden_dim']\
-                                                               ,tf.nn.relu,name='L1'),1,name='L2'),1)
+                    dense_1 = tf.keras.layers.Dense(args['hidden_dim'], activation=tf.nn.relu, name='L1')(hy)
+                    dense_2 = tf.keras.layers.Dense(1, name='L2')(dense_1)
+                    v = tf.squeeze(dense_2, 1)
 
 
         return (R, v, logprobs, actions, idxs, env.input_pnt , probs)

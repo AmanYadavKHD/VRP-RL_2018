@@ -1,4 +1,5 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
 class DecodeStep(object):
     '''
@@ -175,7 +176,7 @@ class RNNDecodeStep(DecodeStep):
         single_cell = tf.nn.rnn_cell.BasicLSTMCell(hidden_dim, 
             forget_bias=forget_bias)
         self.dropout = tf.placeholder(tf.float32,name='decoder_rnn_dropout') 
-        single_cell = tf.contrib.rnn.DropoutWrapper(
+        single_cell = tf.nn.rnn_cell.DropoutWrapper(
                 cell=single_cell, input_keep_prob=(1.0 - self.dropout))
         self.cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * rnn_layers)
 

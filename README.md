@@ -43,3 +43,18 @@ All logs are stored in ``result.txt`` file stored in ``./logs/task_date_time`` d
 
 ## Acknowledgements
 Thanks to [pemami4911/neural-combinatorial-rl-pytorch](https://github.com/pemami4911/neural-combinatorial-rl-pytorch) for getting the idea of restructuring the code.
+
+
+
+
+
+
+
+
+MY_WORK----
+1. Updated the code to run properly by adding the new dependencies and removing outdated dependencies and code.
+2. Updated the code to be usable in CPU .
+3. Added "C:\COLLEGE\SEM X\WORK\VRP-RL_2018\analyze_results.py"
+--To visualise result - 
+--python analyze_results.py   #analyzes latest run
+--python analyze_results.py --log_dir logs/vrp10-2026-03-12_17-53-52  # specific run

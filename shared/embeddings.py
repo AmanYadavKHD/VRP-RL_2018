@@ -1,4 +1,5 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
 
 class Embedding(object):
@@ -25,8 +26,8 @@ class LinearEmbedding(Embedding):
         '''
 
         super(LinearEmbedding,self).__init__('linear',embedding_dim)
-        self.project_emb = tf.layers.Conv1D(embedding_dim,1,
-            _scope=_scope+'Embedding/conv1d')
+        self.project_emb = tf.keras.layers.Conv1D(embedding_dim,1,
+            name=(_scope+'Embedding/conv1d').replace('/', '_'))
 
     def __call__(self,input_pnt):
         # emb_inp_pnt: [batch_size, max_time, embedding_dim]
