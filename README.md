@@ -69,7 +69,8 @@ VRP-RL_2018/
 │   ├── attention.py         # Additive attention mechanism (Bahdanau-style)
 │   ├── decode_step.py       # RNN decoder with pointer network
 │   ├── embeddings.py        # Input embedding layers
-│   └── misc_utils.py        # Logging, entropy, distance utilities
+│   ├── misc_utils.py        # Logging, entropy, distance utilities
+│   └── task_utils.py        # Unified model/env loading logic
 │
 ├── VRP/                     # VRP-specific logic
 │   ├── vrp_utils.py         # VRP environment, data generator, reward
@@ -100,10 +101,12 @@ VRP-RL_2018/
 ├── logs/                    # Training outputs (one folder per run)
 │   └── vrp10-YYYY-MM-DD_HH-MM-SS/
 │       ├── model/           # Saved model checkpoints
-│       ├── results.txt      # Training log + config
-│       ├── model_info.txt   # CSV format docs + commands for this model
-│       ├── routes.txt       # Generated vehicle routes
-│       └── routes.png       # Route visualization map
+│       ├── results.txt      # Raw training log + config
+│       ├── model_info.txt   # CSV format docs + model metadata
+│       ├── analysis_summary.txt # Statistical metrics report (AUTO)
+│       ├── training_plots.png   # 4-panel training history charts (AUTO)
+│       ├── routes.txt       # Generated driver instructions (AUTO)
+│       └── routes.png       # Route visualization map (AUTO)
 │
 └── misc_utils.py            # Legacy utilities (unused, kept for reference)
 ```
@@ -178,15 +181,19 @@ python main.py --task=tsp10 --n_train=10000
 python main.py --task=vrp10 --n_train=2 --test_size=5
 ```
 
-### What Training Produces
+### What Training Produces (Automated Research Suite)
 
-After training, a log folder is created:
+Training now has a **fully automated output cycle**. At the end of every run, it produces 7 critical files in the log folder:
 
 ```
-logs/vrp10-2026-03-12_17-53-52/
-├── model/              # Saved model weights (checkpoints)
-├── results.txt         # Training config + step-by-step logs
-└── model_info.txt      # How to use this model (CSV format, commands)
+logs/vrp10-YYYY-MM-DD_HH-MM-SS/
+├── model/              # Trained weights
+├── analysis_summary.txt # statistical report
+├── training_plots.png   # Performance charts
+├── routes.png           # Visual route map
+├── routes.txt           # Driver sequence
+├── model_info.txt       # Model metadata
+└── results.txt          # Raw logs
 ```
 
 > **Read `model_info.txt`** — it contains everything you need to know about the model: constraints, CSV format, and copy-paste terminal commands.
@@ -290,10 +297,10 @@ Each colored line = one vehicle's route.
 
 ### Workflow
 
-1. **Train** your model: `python main.py --task=vrp10 --n_train=10000`
-2. **Read** `logs/vrp10-.../model_info.txt` — it tells you the exact CSV format
-3. **Create** your CSV in `custom_testing/` (or copy the example)
-4. **Run** inference with your CSV:
+1.  **Train** your model: `python main.py --task=vrp10 --n_train=10000`
+2.  **Read** `logs/vrp10-.../model_info.txt` — it tells you the exact CSV format
+3.  **Create** your CSV in `custom_testing/` (or copy the example)
+4.  **Run** inference with your CSV:
 
 ```bash
 python view_routes.py --is_train=False --task=vrp10 \
@@ -333,22 +340,20 @@ Pre-made CSVs are in `custom_testing/`:
 
 ## Analyzing Training Results
 
-```bash
-# Analyze latest training run
-python analyze_results.py
+> **Update:** Post-training analysis is now **completely automated**. You no longer need to run separate scripts for standard outputs.
 
-# Analyze a specific run
+If you want to re-run analysis for an old log folder:
+
+```bash
+# Re-analyze a specific run
 python analyze_results.py --log_dir logs/vrp10-2026-03-12_17-53-52
 ```
 
-**Output:** `training_plots.png` in the log folder, containing:
-- Training reward over time
-- Actor and critic loss curves
-- Greedy vs. beam search comparison
-
----
-
-## Understanding the Output
+**Reports include:**
+- **Training Reward Progress:** Improvement from first to last step.
+- **Actor/Critic Loss:** Indicators of training stability.
+- **Strategy Comparison:** How Greedy compares to Beam Search.
+- **Route Map:** Spatial visualization of vehicle assignments.
 
 ### What is a "Problem"?
 
