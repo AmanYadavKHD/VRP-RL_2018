@@ -1,3 +1,13 @@
+# ============================================================================
+# LEGACY FILE — NOT USED BY THE PROJECT
+# ============================================================================
+# This file is from the original codebase and is NOT imported by any module.
+# The active utility module is: shared/misc_utils.py
+#
+# This file contains dead code with PyTorch references (torch, Variable) and
+# deprecated APIs (scipy.misc, tf.contrib). It is kept for reference only.
+# ============================================================================
+
 # Code referenced from https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
 from __future__ import print_function
 

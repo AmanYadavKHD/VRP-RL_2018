@@ -8,10 +8,10 @@ def str2bool(v):
 
 def initialize_task_settings(args,task):
 
-    try:
-        task_params = task_lst[task]
-    except:
-        raise Exception('Task is not implemented.') 
+    if task not in task_lst:
+        available = ', '.join(task_lst.keys())
+        raise ValueError(f"Task '{task}' not found. Available: {available}")
+    task_params = task_lst[task]
 
     for name, value in task_params._asdict().items():
     	args[name] = value
@@ -93,11 +93,8 @@ def ParseParams():
         args['model_dir'] = os.path.join(args['log_dir'],'model')
 
     # file to write the stdout
-    try:
-        os.makedirs(args['log_dir'])
-        os.makedirs(args['model_dir'])
-    except:
-        pass
+    os.makedirs(args['log_dir'], exist_ok=True)
+    os.makedirs(args['model_dir'], exist_ok=True)
 
     # create a print handler
     out_file = open(os.path.join(args['log_dir'], 'results.txt'),'w+', encoding='utf-8') 

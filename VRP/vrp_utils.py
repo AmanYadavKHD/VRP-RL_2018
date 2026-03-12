@@ -29,7 +29,7 @@ def create_VRP_dataset(
 
     # set random number generator
     n_nodes = n_cust +1
-    if seed == None:
+    if seed is None:
         rnd = np.random
     else:
         rnd = np.random.RandomState(seed)
@@ -38,7 +38,7 @@ def create_VRP_dataset(
     task_name = 'vrp-size-{}-len-{}-{}.txt'.format(n_problems, n_nodes,data_type)
     fname = os.path.join(data_dir, task_name)
 
-    # cteate/load data
+    # create/load data
     if os.path.exists(fname):
         print('Loading dataset for {}...'.format(task_name))
         data = np.loadtxt(fname,delimiter=' ')
@@ -86,7 +86,7 @@ class DataGenerator(object):
     def get_train_next(self):
         '''
         Get next batch of problems for training
-        Retuens:
+        Returns:
             input_data: data with shape [batch_size x max_time x 3]
         '''
 

@@ -110,7 +110,6 @@ python analyze_results.py --log_dir logs/vrp10-2026-03-12_17-53-52
 | `--is_train` | `True` | `True`=train, `False`=inference only |
 | `--load_path` | *(empty)* | Path to model checkpoint to load |
 | `--gpu` | `""` | GPU number, empty=CPU |
-| `--n_train` | `10000` | Training steps |
 | `--n_show` | `4` | Problems in routes.png (view_routes.py only) |
 | `--csv_path` | `""` | Custom CSV file (view_routes.py only) |
 

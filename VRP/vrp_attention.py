@@ -26,7 +26,7 @@ class AttentionVRPActor(object):
 
     def __call__(self, query, ref, env):
         """
-        This function gets a query tensor and ref rensor and returns the logit op.
+        This function gets a query tensor and ref tensor and returns the logit op.
         Args: 
             query: is the hidden state of the decoder at the current
                 time step. [batch_size x dim]
@@ -99,7 +99,7 @@ class AttentionVRPCritic(object):
         
     def __call__(self, query, ref, env):
         """
-        This function gets a query tensor and ref rensor and returns the logit op.
+        This function gets a query tensor and ref tensor and returns the logit op.
         Args: 
             query: is the hidden state of the decoder at the current
                 time step. [batch_size x dim]

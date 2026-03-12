@@ -66,7 +66,7 @@ VRP-RL_2018/
 │   └── attention_agent.py   # RLAgent class (actor-critic with attention)
 │
 ├── shared/                  # Shared neural network components
-│   ├── attention.py         # Multi-head attention mechanism
+│   ├── attention.py         # Additive attention mechanism (Bahdanau-style)
 │   ├── decode_step.py       # RNN decoder with pointer network
 │   ├── embeddings.py        # Input embedding layers
 │   └── misc_utils.py        # Logging, entropy, distance utilities
@@ -397,11 +397,9 @@ For the full list, see `configs.py` and `task_specific_params.py`.
 ```
 Input (customer locations + demands)
     ↓
-Embedding Layer (Conv1D)
+Linear Embedding (Conv1D → hidden_dim)
     ↓
-Encoder (Multi-head Attention × 3 blocks)
-    ↓
-Decoder (LSTM + Pointer Network)
+Decoder (LSTM + Pointer Network with Additive Attention)
     ↓
 Output (sequence of node visits = route)
 ```

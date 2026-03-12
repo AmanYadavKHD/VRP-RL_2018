@@ -25,7 +25,7 @@ def create_TSP_dataset(
      '''
 
     # set random number generator
-    if seed == None:
+    if seed is None:
         rnd = np.random
     else:
         rnd = np.random.RandomState(seed)
@@ -34,7 +34,7 @@ def create_TSP_dataset(
     task_name = 'tsp-size-{}-len-{}-{}.txt'.format(n_problems, n_nodes,data_type)
     fname = os.path.join(data_dir, task_name)
 
-    # cteate/load data
+    # create/load data
     if os.path.exists(fname):
         print('Loading dataset for {}...'.format(task_name))
         data = np.loadtxt(fname)

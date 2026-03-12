@@ -11,12 +11,10 @@ import numpy as np
 
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
-import numpy as np
-import scipy.misc 
 try:
-        from StringIO import StringIO  # Python 2.7
+        from io import BytesIO
 except ImportError:
-        from io import BytesIO         # Python 3.x
+        from io import BytesIO
 
 print_grad = True
 
@@ -48,9 +46,10 @@ class printOut(object):
                 sys.stdout.write("\n")
             sys.stdout.flush()
 
-    def print_time(self,s, start_time):
+    def print_time(self, s, start_time):
         """Take a start time, print elapsed duration, and return a new time."""
-        self.print_out("%s, time %ds, %s." % (s, (time.time() - start_time) +"  " +str(time.ctime()) ))
+        elapsed = time.time() - start_time
+        self.print_out("%s, time %ds, %s." % (s, elapsed, str(time.ctime())))
         return time.time()
 
 
@@ -76,8 +75,8 @@ def debug_tensor(s, msg=None, summarize=10):
 
 def has_nan(datum, tensor):
         if hasattr(tensor, 'dtype'):
-                if (np.issubdtype(tensor.dtype, np.float) or
-                        np.issubdtype(tensor.dtype, np.complex) or
+                if (np.issubdtype(tensor.dtype, np.floating) or
+                        np.issubdtype(tensor.dtype, np.complexfloating) or
                         np.issubdtype(tensor.dtype, np.integer)):
                         return np.any(np.isnan(tensor))
                 else:

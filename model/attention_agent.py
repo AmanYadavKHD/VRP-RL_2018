@@ -19,7 +19,7 @@ class RLAgent(object):
                 _scope='',
                 rl_algorithm=None):
         '''
-        This class builds the model and run testt and train.
+        This class builds the model and runs test and train.
         Inputs:
             args: arguments. See the description in config.py file.
             prt: print controller which writes logs to a file.
