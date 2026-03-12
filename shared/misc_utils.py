@@ -37,7 +37,7 @@ class printOut(object):
             self.out_file.write(s)
             if new_line:
                 self.out_file.write("\n")
-        self.out_file.flush()
+            self.out_file.flush()
 
         # stdout
         if self.stdout_print:

@@ -1,6 +1,7 @@
 import argparse
 import shared.misc_utils as utils 
 import os
+import sys
 from task_specific_params import task_lst
 
 def str2bool(v):
@@ -88,33 +89,42 @@ def ParseParams():
     args, unknown = parser.parse_known_args()
     args = vars(args)
 
-    args['log_dir'] = "{}/{}-{}".format(args['log_dir'],args['task'], utils.get_time())
-    if args['model_dir'] =='':
-        args['model_dir'] = os.path.join(args['log_dir'],'model')
+    # Initialize task-specific values (merged from task_specific_params)
+    args = initialize_task_settings(args, args['task'])
 
-    # file to write the stdout
-    os.makedirs(args['log_dir'], exist_ok=True)
-    os.makedirs(args['model_dir'], exist_ok=True)
-
-    # create a print handler
-    out_file = open(os.path.join(args['log_dir'], 'results.txt'),'w+', encoding='utf-8') 
-    prt = utils.printOut(out_file,args['stdout_print'])
+    # Set GPU environment variable
+    os.environ["CUDA_VISIBLE_DEVICES"] = args['gpu']
 
     # Fix Windows console encoding for Unicode output
-    import sys
     if sys.stdout.encoding != 'utf-8':
         try:
             sys.stdout.reconfigure(encoding='utf-8')
         except Exception:
             pass
 
-    os.environ["CUDA_VISIBLE_DEVICES"]=  args['gpu'] 
+    return args
 
-    args = initialize_task_settings(args,args['task'])
+def setup_logs(args):
+    """
+    Sets up the logging directory and returns a print object (prt).
+    Only called during training or if a fresh log folder is actually needed.
+    """
+    # Create timestamped folder
+    args['log_dir'] = "{}/{}-{}".format(args['log_dir'], args['task'], utils.get_time())
+    if args['model_dir'] == '':
+        args['model_dir'] = os.path.join(args['log_dir'], 'model')
+
+    os.makedirs(args['log_dir'], exist_ok=True)
+    os.makedirs(args['model_dir'], exist_ok=True)
+
+    # create a print handler
+    out_file = open(os.path.join(args['log_dir'], 'results.txt'), 'w+', encoding='utf-8') 
+    prt = utils.printOut(out_file, args['stdout_print'])
 
     # print the run args
     for key, value in sorted(args.items()):
-        prt.print_out("{}: {}".format(key,value))
+        prt.print_out("{}: {}".format(key, value))
 
     return args, prt
+
 

@@ -7,9 +7,10 @@ import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
 import time
 
-from configs import ParseParams
+from configs import ParseParams, setup_logs
 
 from shared.decode_step import RNNDecodeStep
+from shared.task_utils import load_task_specific_components
 from model.attention_agent import RLAgent
 from rl_algorithms import get_algorithm, list_algorithms
 
@@ -30,6 +31,7 @@ def write_model_info(args, log_dir):
     edim     = args.get('embedding_dim', '?')
     n_train  = args.get('n_train', '?')
     batch    = args.get('batch_size', '?')
+    rl_model = args.get('rl_model', 'reinforce')
     model_dir= args.get('model_dir', log_dir + '/model')
 
     is_vrp = (task_name == 'vrp')
@@ -80,6 +82,7 @@ def write_model_info(args, log_dir):
         lines.append(f'  Problem type : TSP (Travelling Salesman Problem)')
         lines.append(f'  Cities       : {n_nodes} per problem')
         lines.append(f'  Decode steps : {dec_len}')
+    lines.append(f'  RL Algorithm : {rl_model.upper()}')
     lines.append('')
 
     lines.append('-' * 68)
@@ -183,30 +186,46 @@ def write_model_info(args, log_dir):
         f.write('\n'.join(lines))
     print('[OK] Model info written to: {}'.format(out_path))
 
-def load_task_specific_components(task):
-    '''
-    This function load task-specific libraries
-    '''
-    if task == 'tsp':
-        from TSP.tsp_utils import DataGenerator, Env ,reward_func
-        from shared.attention import Attention
+def run_automated_analysis(log_dir, args):
+    """Run analyze_results.py and view_routes.py logic automatically."""
+    try:
+        # 1. Statistical Analysis & Phase Plots (training_plots.png)
+        import analyze_results
+        data = analyze_results.parse_results(log_dir)
+        if data:
+            analyze_results.plot_results(data, log_dir)
+            summary_path = os.path.join(log_dir, "analysis_summary.txt")
+            with open(summary_path, 'w', encoding='utf-8') as f:
+                import sys
+                original_stdout = sys.stdout
+                sys.stdout = f
+                try:
+                    analyze_results.print_summary(data, log_dir)
+                finally:
+                    sys.stdout = original_stdout
+        # 2. Route Visualization (routes.png)
+        # We run this in a separate process to avoid any resource/session conflicts with the training process
+        import subprocess
+        model_dir = os.path.join(log_dir, "model")
+        ckpt = tf.train.latest_checkpoint(model_dir)
+        if ckpt:
+            print(f"Triggering route visualization for: {ckpt}")
+            cmd = [
+                sys.executable, 
+                "view_routes.py", 
+                "--task", str(args['task']),
+                "--load_path", str(ckpt),
+                "--n_show", "4",
+                "--is_train", "False"
+            ]
+            subprocess.run(cmd, check=False)
+            print(f"[✓] Automation cycle finished.")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[!] Could not run automated analysis/routes: {e}")
 
-        AttentionActor = Attention
-        AttentionCritic = Attention
-
-
-    elif task == 'vrp':
-        from VRP.vrp_utils import DataGenerator,Env,reward_func
-        from VRP.vrp_attention import AttentionVRPActor,AttentionVRPCritic
-
-        AttentionActor = AttentionVRPActor
-        AttentionCritic = AttentionVRPCritic
-
-    else:
-        raise Exception('Task is not implemented')
-
-
-    return DataGenerator, Env, reward_func, AttentionActor, AttentionCritic
+# Removed: load_task_specific_components moved to shared.task_utils
 
 def main(args, prt):
     config = tf.ConfigProto()
@@ -240,6 +259,8 @@ def main(args, prt):
 
     # train or evaluate
     start_time = time.time()
+    history = []  # List of (step, avg_reward, avg_value)
+    
     if args['is_train']:
         prt.print_out('Training started ...')
         train_time_beg = time.time()
@@ -253,14 +274,25 @@ def main(args, prt):
 
             if step%args['log_interval'] == 0:
                 train_time_end = time.time()-train_time_beg
+                avg_r = np.mean(R_val)
+                avg_v = np.mean(v_val)
+                history.append((step, avg_r, avg_v))
+                
                 prt.print_out('Train Step: {} -- Time: {} -- Train reward: {} -- Value: {}'\
                       .format(step,time.strftime("%H:%M:%S", time.gmtime(\
-                        train_time_end)),np.mean(R_val),np.mean(v_val)))
+                        train_time_end)),avg_r,avg_v))
                 prt.print_out('    actor loss: {} -- critic loss: {}'\
                       .format(np.mean(actor_loss_val),np.mean(critic_loss_val)))
                 train_time_beg = time.time()
-            if step%args['test_interval'] == 0:
                 agent.inference(args['infer_type'])
+
+        # Save final checkpoint before automation
+        final_ckpt = os.path.join(args['model_dir'], 'model.ckpt')
+        agent.saver.save(sess, final_ckpt, global_step=step)
+        print(f"[✓] Final checkpoint saved: {final_ckpt}")
+
+        # Save final analysis & routes
+        run_automated_analysis(args['log_dir'], args)
 
     else: # inference
         prt.print_out('Evaluation started ...')
@@ -275,7 +307,17 @@ def main(args, prt):
         write_model_info(args, args['log_dir'])
 
 if __name__ == "__main__":
-    args, prt = ParseParams()
+    args = ParseParams()
+    
+    # Only setup logs/folders if we are actually training
+    prt = None
+    if args['is_train']:
+        args, prt = setup_logs(args)
+    else:
+        # For inference, just print to console, don't create new timestamped folders
+        from shared.misc_utils import printOut
+        prt = printOut(None, True)
+
     # Random
     random_seed = args['random_seed']
     tf.reset_default_graph()

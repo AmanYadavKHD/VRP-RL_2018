@@ -42,7 +42,7 @@ import argparse
 
 from configs import ParseParams
 from model.attention_agent import RLAgent
-from main import load_task_specific_components
+from shared.task_utils import load_task_specific_components
 
 
 # ─────────────────────────────────────────────
@@ -285,16 +285,28 @@ def save_route_map(test_data, idx_sequence, R, n_show, save_path):
 # Main entry point
 # ─────────────────────────────────────────────
 
-def run_inference_and_get_routes():
-    # ── Parse extra args before ParseParams consumes sys.argv ──
-    pre = argparse.ArgumentParser(add_help=False)
-    pre.add_argument('--n_show', type=int, default=4)
-    pre.add_argument('--csv_path', type=str, default='')
-    extra, _ = pre.parse_known_args()
-    n_show = extra.n_show
-    csv_path = extra.csv_path
+def run_inference_and_get_routes(args=None):
+    print(f"DEBUG: view_routes received args type: {type(args)}")
+    if args is not None:
+        print(f"DEBUG: view_routes args keys: {list(args.keys())}")
+    
+    if args is None:
+        # ── Parse extra args before ParseParams consumes sys.argv ──
+        pre = argparse.ArgumentParser(add_help=False)
+        pre.add_argument('--n_show', type=int, default=4)
+        pre.add_argument('--csv_path', type=str, default='')
+        pre_extra, _ = pre.parse_known_args()
+        
+        args = ParseParams()
+        args['n_show'] = pre_extra.n_show
+        args['csv_path'] = pre_extra.csv_path
+    
+    # Simple console print logger
+    from shared.misc_utils import printOut
+    prt = printOut(None, True)
 
-    args, prt = ParseParams()
+    n_show = args.get('n_show', 4)
+    csv_path = args.get('csv_path', '')
 
     # ── Find model ──
     has_load = bool(args.get('load_path'))
@@ -307,7 +319,9 @@ def run_inference_and_get_routes():
         model_log_dir = os.path.dirname(os.path.normpath(args['load_path']))
         print(f"Auto-selected model: {ckpt}")
     else:
-        model_log_dir = os.path.dirname(os.path.normpath(args['load_path']))
+        # Get the directory of the model, then its parent
+        model_dir = os.path.dirname(os.path.normpath(args['load_path']))
+        model_log_dir = os.path.dirname(model_dir)
 
     output_dir = model_log_dir
     os.makedirs(output_dir, exist_ok=True)
