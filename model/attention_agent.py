@@ -16,7 +16,8 @@ class RLAgent(object):
                 clAttentionActor,
                 clAttentionCritic,
                 is_train=True,
-                _scope=''):
+                _scope='',
+                rl_algorithm=None):
         '''
         This class builds the model and run testt and train.
         Inputs:
@@ -38,6 +39,7 @@ class RLAgent(object):
         self.dataGen = dataGen
         self.reward_func = reward_func
         self.clAttentionCritic = clAttentionCritic
+        self.rl_algorithm = rl_algorithm
         
         self.embedding = LinearEmbedding(args['embedding_dim'],
             _scope=_scope+'Actor/')
@@ -55,12 +57,18 @@ class RLAgent(object):
                        initializer=tf.initializers.glorot_uniform())
 
         start_time  = time.time()
-        if is_train:
-            self.train_summary = self.build_model(decode_type = "stochastic" )
-            self.train_step = self.build_train_step()
 
+        # Build greedy and beam search models first (needed by greedy_baseline algorithm)
         self.val_summary_greedy = self.build_model(decode_type = "greedy" )
         self.val_summary_beam = self.build_model(decode_type = "beam_search")
+
+        if is_train:
+            self.train_summary = self.build_model(decode_type = "stochastic" )
+            if self.rl_algorithm is not None:
+                self.train_step = self.rl_algorithm.build_train_step(
+                    self, self.train_summary, args)
+            else:
+                self.train_step = self.build_train_step()
 
         model_time = time.time()- start_time
         self.prt.print_out("It took {}s to build the agent.".format(str(model_time)))
@@ -221,7 +229,11 @@ class RLAgent(object):
 
         ### critic
         v = tf.constant(0)
-        if decode_type=='stochastic':
+        # Only build critic if the algorithm needs it (greedy_baseline doesn't)
+        build_critic = True
+        if self.rl_algorithm is not None and not self.rl_algorithm.needs_critic():
+            build_critic = False
+        if decode_type=='stochastic' and build_critic:
             with tf.variable_scope("Critic"):
                 with tf.variable_scope("Encoder"):
                     # init states

@@ -58,7 +58,14 @@ def ParseParams():
     parser.add_argument('--critic_net_lr', default=1e-4,type=float, help="Set the learning rate for the critic network")
     parser.add_argument('--random_seed', default=24601,type=int, help='')
     parser.add_argument('--max_grad_norm', default=2.0, type=float, help='Gradient clipping')
-    parser.add_argument('--entropy_coeff', default=0.0, type=float, help='coefficient for entropy regularization')
+    parser.add_argument('--entropy_coeff', default=0.01, type=float, help='Entropy bonus coefficient (used by A2C, PPO)')
+
+    # RL Algorithm selection
+    parser.add_argument('--rl_model', default='reinforce', type=str,
+                        choices=['reinforce', 'a2c', 'ppo', 'greedy_baseline'],
+                        help='RL algorithm: reinforce|a2c|ppo|greedy_baseline')
+    parser.add_argument('--ppo_clip', default=0.2, type=float, help='PPO clipping parameter epsilon')
+    parser.add_argument('--ppo_epochs', default=4, type=int, help='PPO gradient update epochs per batch')
     # parser.add_argument('--loss_type', type=int, default=1, help='1,2,3')
 
     # inference
@@ -93,8 +100,16 @@ def ParseParams():
         pass
 
     # create a print handler
-    out_file = open(os.path.join(args['log_dir'], 'results.txt'),'w+') 
+    out_file = open(os.path.join(args['log_dir'], 'results.txt'),'w+', encoding='utf-8') 
     prt = utils.printOut(out_file,args['stdout_print'])
+
+    # Fix Windows console encoding for Unicode output
+    import sys
+    if sys.stdout.encoding != 'utf-8':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
 
     os.environ["CUDA_VISIBLE_DEVICES"]=  args['gpu'] 
 
