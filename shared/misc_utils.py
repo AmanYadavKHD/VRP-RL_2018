@@ -99,9 +99,9 @@ def softmax_entropy(p0):
 
 def Dist_mat(A):
         # A is of shape [batch_size x nnodes x 2].
-        # return: a distance matrix with shape [batch_size x nnodes x nnodes]
+        # return: a time matrix with shape [batch_size x nnodes x nnodes]
         nnodes = tf.shape(A)[1]
-        A1 = tf.tile(tf.expand_dims(A,1),[1,nnodes,1,1])
-        A2 = tf.tile(tf.expand_dims(A,2),[1,1,nnodes,1])
+        A1 = tf.tile(tf.expand_dims(A,1), tf.stack([1,nnodes,1,1]))
+        A2 = tf.tile(tf.expand_dims(A,2), tf.stack([1,1,nnodes,1]))
         dist = tf.norm(A1-A2,axis=3)
         return dist

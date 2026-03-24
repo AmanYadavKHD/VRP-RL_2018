@@ -125,12 +125,12 @@ def print_summary(data, log_dir):
         improvement = data['train_rewards'][0] - data['train_rewards'][-1]
         pct = (improvement / data['train_rewards'][0]) * 100 if data['train_rewards'][0] != 0 else 0
         if improvement > 0:
-            print(f"  Improvement:      {improvement:.3f} ({pct:.1f}% shorter routes)")
+            print(f"  Improvement:      {improvement:.1f}s ({pct:.1f}% faster routes)")
         else:
             print(f"  Change:           {improvement:.3f} (model hasn't improved yet)")
 
     if data['greedy_avgs']:
-        print(f"\n--- Evaluation (lower = better routes) ---")
+        print(f"\n--- Evaluation (lower = faster routes) ---")
         print(f"  Greedy  (latest): {data['greedy_avgs'][-1]:.3f} ± {data['greedy_stds'][-1]:.3f}")
         if data['beam_avgs']:
             print(f"  Beam Search:      {data['beam_avgs'][-1]:.3f} ± {data['beam_stds'][-1]:.3f}")
@@ -162,14 +162,14 @@ def plot_results(data, log_dir):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle(f"VRP-RL Training Analysis — {os.path.basename(log_dir)}", fontsize=14, fontweight='bold')
 
-    # 1. Training Reward (route distance) over time
+    # 1. Training Reward (travel time) over time
     ax = axes[0, 0]
     ax.plot(data['steps'], data['train_rewards'], 'b-', linewidth=1.5, label='Train reward')
     if data['values']:
         ax.plot(data['steps'], data['values'], 'r--', linewidth=1, alpha=0.7, label='Critic value')
     ax.set_xlabel('Training Step')
-    ax.set_ylabel('Route Distance')
-    ax.set_title('Training Reward (↓ lower = better)')
+    ax.set_ylabel('Travel Time (seconds)')
+    ax.set_title('Training Reward — Travel Time (↓ lower = better)')
     ax.legend()
     ax.grid(True, alpha=0.3)
 
@@ -204,7 +204,7 @@ def plot_results(data, log_dir):
                         [a + s for a, s in zip(data['beam_avgs'], data['beam_stds'])],
                         alpha=0.2, color='red')
     ax.set_xlabel('Evaluation Number')
-    ax.set_ylabel('Avg Route Distance')
+    ax.set_ylabel('Avg Travel Time (seconds)')
     ax.set_title('Evaluation: Greedy vs Beam Search (↓ lower = better)')
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -219,8 +219,8 @@ def plot_results(data, log_dir):
         labels = [f"Steps\n{i * chunk * (data['steps'][1] - data['steps'][0]) if len(data['steps']) > 1 else 0}-{(i + 1) * chunk * (data['steps'][1] - data['steps'][0]) if len(data['steps']) > 1 else 0}" for i in range(len(chunk_means))]
         colors = plt.cm.RdYlGn_r([i / len(chunk_means) for i in range(len(chunk_means))])
         ax.bar(range(len(chunk_means)), chunk_means, color=colors, edgecolor='black', linewidth=0.5)
-        ax.set_ylabel('Avg Route Distance')
-        ax.set_title('Reward by Training Phase (↓ lower = better)')
+        ax.set_ylabel('Avg Travel Time (seconds)')
+        ax.set_title('Travel Time by Training Phase (↓ lower = better)')
         ax.set_xticks(range(len(chunk_means)))
         ax.set_xticklabels([f"Phase {i+1}" for i in range(len(chunk_means))])
     else:

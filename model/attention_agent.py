@@ -27,7 +27,7 @@ class RLAgent(object):
             env: an instance of the environment.
             dataGen: a data generator which generates data for test and training.
             reward_func: the function which is used for computing the reward. In the 
-                        case of TSP and VRP, it returns the tour length.
+                        case of TSP and VRP, it returns the total travel time.
             clAttentionActor: Attention mechanism that is used in actor.
             clAttentionCritic: Attention mechanism that is used in critic.
             is_train: if true, the agent is used for training; else, it is used only 
@@ -59,7 +59,7 @@ class RLAgent(object):
 
         start_time  = time.time()
 
-        # Build greedy and beam search models first (needed by greedy_baseline algorithm)
+        # Build greedy and beam search models (needed for evaluation/inference)
         self.val_summary_greedy = self.build_model(decode_type = "greedy" )
         self.val_summary_beam = self.build_model(decode_type = "beam_search")
 
@@ -83,7 +83,7 @@ class RLAgent(object):
         # builds the model
         args = self.args
         env = self.env
-        batch_size = tf.shape(env.input_pnt)[0]
+        batch_size = tf.cast(tf.shape(env.input_pnt)[0], tf.int32)
 
         # input_pnt: [batch_size x max_time x 2]
         input_pnt = env.input_pnt
@@ -91,14 +91,14 @@ class RLAgent(object):
         encoder_emb_inp = self.embedding(input_pnt)
 
         if decode_type == 'greedy' or decode_type == 'stochastic':
-            beam_width = 1
+            beam_width = tf.constant(1, dtype=tf.int32)
         elif decode_type == 'beam_search': 
-            beam_width = args['beam_width']
+            beam_width = tf.cast(args['beam_width'], tf.int32)
             
         # reset the env. The environment is modified to handle beam_search decoding.
-        env.reset(beam_width)
+        env.reset(batch_size, beam_width)
 
-        BatchSequence = tf.expand_dims(tf.cast(tf.range(batch_size*beam_width), tf.int64), 1)
+        BatchSequence = tf.expand_dims(tf.cast(tf.range(batch_size*beam_width), tf.int32), 1)
 
 
         # create tensors and lists
@@ -108,12 +108,14 @@ class RLAgent(object):
         idxs = []
 
         # start from depot
-        idx = (env.n_nodes-1)*tf.ones([batch_size*beam_width,1])
-        action = tf.tile(input_pnt[:,env.n_nodes-1],[beam_width,1])
+        ones_shape = tf.stack([tf.cast(batch_size, tf.int32)*tf.cast(beam_width, tf.int32), 1])
+        idx = tf.cast((env.n_nodes-1)*tf.ones(ones_shape), tf.int32)
+        action_tile = tf.stack([tf.cast(beam_width, tf.int32), 1])
+        action = tf.tile(input_pnt[:,env.n_nodes-1], action_tile)
 
 
         # decoder_state
-        initial_state = tf.zeros([args['rnn_layers'], 2, batch_size*beam_width, args['hidden_dim']])
+        initial_state = tf.zeros(tf.stack([args['rnn_layers'], 2, batch_size*beam_width, args['hidden_dim']]))
         l = tf.unstack(initial_state, axis=0)
         decoder_state = tuple([tf.nn.rnn_cell.LSTMStateTuple(l[idx][0],l[idx][1])
                   for idx in range(args['rnn_layers'])])            
@@ -122,13 +124,14 @@ class RLAgent(object):
         # decoder_input: [batch_size*beam_width x 1 x hidden_dim]
         if args['task_name'] == 'tsp':
             # decoder_input: [batch_size*beam_width x 1 x hidden_dim]
-            decoder_input = tf.tile(self.decoder_input, [batch_size* beam_width,1,1])
+            decoder_input = tf.tile(self.decoder_input, tf.stack([batch_size* beam_width,1,1]))
         elif args['task_name'] == 'vrp':
+            decoder_tile = tf.stack([tf.cast(beam_width, tf.int32), 1, 1])
             decoder_input = tf.tile(tf.expand_dims(encoder_emb_inp[:,env.n_nodes-1], 1), 
-                                    [beam_width,1,1])
+                                    decoder_tile)
 
         # decoding loop
-        context = tf.tile(encoder_emb_inp,[beam_width,1,1])
+        context = tf.tile(encoder_emb_inp,tf.stack([tf.cast(beam_width, tf.int32),1,1]))
         for i in range(args['decode_len']):
             
             logit, prob, logprob, decoder_state = self.decodeStep.step(decoder_input,
@@ -138,20 +141,21 @@ class RLAgent(object):
             # idx: [batch_size*beam_width x 1]
             beam_parent = None
             if decode_type == 'greedy':
-                idx = tf.expand_dims(tf.argmax(prob, 1),1)
+                idx = tf.expand_dims(tf.cast(tf.argmax(prob, 1), tf.int32),1)
             elif decode_type == 'stochastic':
                 # select stochastic actions. idx has shape [batch_size x 1]
                 # tf.multinomial sometimes gives numerical errors, so we use our multinomial :(
                 def my_multinomial():
                     prob_idx = tf.stop_gradient(prob)
                     prob_idx_cum = tf.cumsum(prob_idx,1)
-                    rand_uni = tf.tile(tf.random_uniform([batch_size,1]),[1,env.n_nodes])
+                    rand_uni = tf.tile(tf.random_uniform([batch_size,1]), tf.stack([1, env.n_nodes]))
                     # sorted_ind : [[0,1,2,3..],[0,1,2,3..] , ]
-                    sorted_ind = tf.cast(tf.tile(tf.expand_dims(tf.range(env.n_nodes),0),[batch_size,1]),tf.int64)
-                    tmp = tf.multiply(tf.cast(tf.greater(prob_idx_cum,rand_uni),tf.int64), sorted_ind)+\
-                        10000*tf.cast(tf.greater_equal(rand_uni,prob_idx_cum),tf.int64)
+                    sorted_tile = tf.stack([batch_size, 1])
+                    sorted_ind = tf.cast(tf.tile(tf.expand_dims(tf.range(env.n_nodes),0), sorted_tile),tf.int32)
+                    tmp = tf.multiply(tf.cast(tf.greater(prob_idx_cum,rand_uni),tf.int32), sorted_ind)+\
+                        tf.constant(10000, dtype=tf.int32)*tf.cast(tf.greater_equal(rand_uni,prob_idx_cum),tf.int32)
 
-                    idx = tf.expand_dims(tf.argmin(tmp,1),1)
+                    idx = tf.expand_dims(tf.cast(tf.argmin(tmp,1), tf.int32),1)
                     return tmp, idx
 
                 tmp, idx = my_multinomial()
@@ -164,18 +168,19 @@ class RLAgent(object):
                 if i==0:
                     # BatchBeamSeq: [batch_size*beam_width x 1]
                     # [0,1,2,3,...,127,0,1,...],
-                    batchBeamSeq = tf.expand_dims(tf.tile(tf.cast(tf.range(batch_size), tf.int64),
-                                                         [beam_width]),1)
+                    beam_tile = tf.reshape(tf.cast(beam_width, tf.int32), [1])
+                    batchBeamSeq = tf.expand_dims(tf.tile(tf.cast(tf.range(batch_size), tf.int32),
+                                                         beam_tile),1)
                     beam_path  = []
                     log_beam_probs = []
                     # in the initial decoder step, we want to choose beam_width different branches
                     # log_beam_prob: [batch_size, sourceL]
-                    log_beam_prob = tf.log(tf.split(prob,num_or_size_splits=beam_width, axis=0)[0])
+                    log_beam_prob = tf.log(tf.split(prob, num_or_size_splits=args['beam_width'], axis=0)[0])
 
                 elif i > 0:
                     log_beam_prob = tf.log(prob) + log_beam_probs[-1]
                     # log_beam_prob:[batch_size, beam_width*sourceL]
-                    log_beam_prob = tf.concat(tf.split(log_beam_prob, num_or_size_splits=beam_width, axis=0),1)
+                    log_beam_prob = tf.concat(tf.split(log_beam_prob, num_or_size_splits=args['beam_width'], axis=0),1)
 
                 # topk_prob_val,topk_logprob_ind: [batch_size, beam_width]
                 topk_logprob_val, topk_logprob_ind = tf.nn.top_k(log_beam_prob, beam_width)
@@ -188,29 +193,30 @@ class RLAgent(object):
                     tf.transpose(topk_logprob_ind), [1,-1]))
 
                 #idx,beam_parent: [batch_size*beam_width x 1]                               
-                idx = tf.cast(topk_logprob_ind % env.n_nodes, tf.int64) # Which city in route.
-                beam_parent = tf.cast(topk_logprob_ind // env.n_nodes, tf.int64) # Which hypothesis it came from.
+                idx = tf.cast(topk_logprob_ind % env.n_nodes, tf.int32) # Which city in route.
+                beam_parent = tf.cast(topk_logprob_ind // env.n_nodes, tf.int32) # Which hypothesis it came from.
 
                 # batchedBeamIdx:[batch_size*beam_width]
-                batchedBeamIdx= batchBeamSeq + tf.cast(batch_size,tf.int64)*beam_parent
+                batchedBeamIdx= batchBeamSeq + tf.cast(batch_size,tf.int32)*beam_parent
                 prob = tf.gather_nd(prob,batchedBeamIdx)
 
                 beam_path.append(beam_parent)
                 log_beam_probs.append(topk_logprob_val)
 
-            state = env.step(idx,beam_parent)
+            state = env.step(idx, batch_size, beam_parent)
             batched_idx = tf.concat([BatchSequence,idx],1)
 
-
+            decoder_tile_loop = tf.stack([tf.cast(beam_width, tf.int32), 1, 1])
             decoder_input = tf.expand_dims(tf.gather_nd(
-                tf.tile(encoder_emb_inp,[beam_width,1,1]), batched_idx),1)
+                tf.tile(encoder_emb_inp, decoder_tile_loop), batched_idx),1)
 
             logprob = tf.log(tf.gather_nd(prob, batched_idx))
             probs.append(prob)
             idxs.append(idx)
             logprobs.append(logprob)           
 
-            action = tf.gather_nd(tf.tile(input_pnt, [beam_width,1,1]), batched_idx )
+            action_large_tile = tf.stack([tf.cast(beam_width, tf.int32), 1, 1])
+            action = tf.gather_nd(tf.tile(input_pnt, action_large_tile), batched_idx )
             actions_tmp.append(action)
 
         if decode_type=='beam_search':
@@ -221,12 +227,18 @@ class RLAgent(object):
 
                 tmplst = [tf.gather_nd(actions_tmp[k],tmpind[-1])] + tmplst
                 tmpind += [tf.gather_nd(
-                    (batchBeamSeq + tf.cast(batch_size,tf.int64)*beam_path[k]),tmpind[-1])]
+                    (batchBeamSeq + tf.cast(batch_size,tf.int32)*beam_path[k]),tmpind[-1])]
             actions = tmplst
         else: 
             actions = actions_tmp
 
-        R = self.reward_func(actions)            
+        # Tile time_matrix for beam_search: idxs are [batch*beam, 1] but
+        # time_matrix is [batch, n, n]. Must match first dimension.
+        time_matrix_for_reward = tf.tile(env.time_matrix, tf.stack([beam_width, 1, 1]))
+        if self.args['task_name'] == 'vrp':
+            R = self.reward_func(idxs, time_matrix_for_reward, env)
+        else:
+            R = self.reward_func(idxs, time_matrix_for_reward)
 
         ### critic
         v = tf.constant(0)
@@ -238,7 +250,7 @@ class RLAgent(object):
             with tf.variable_scope("Critic"):
                 with tf.variable_scope("Encoder"):
                     # init states
-                    initial_state = tf.zeros([args['rnn_layers'], 2, batch_size, args['hidden_dim']])
+                    initial_state = tf.zeros(tf.stack([args['rnn_layers'], 2, batch_size, args['hidden_dim']]))
                     l = tf.unstack(initial_state, axis=0)
                     rnn_tuple_state = tuple([tf.nn.rnn_cell.LSTMStateTuple(l[idx][0],l[idx][1])
                               for idx in range(args['rnn_layers'])])
@@ -337,16 +349,28 @@ class RLAgent(object):
         avg_reward = []
 
         if eval_type == 'greedy':
+            if not hasattr(self, 'val_summary_greedy'): 
+                self.val_summary_greedy = self.build_model(decode_type = "greedy" )
             summary = self.val_summary_greedy
         elif eval_type == 'beam_search':
+            if not hasattr(self, 'val_summary_beam'):
+                self.val_summary_beam = self.build_model(decode_type = "beam_search")
             summary = self.val_summary_beam
         self.dataGen.reset()
         for step in range(self.dataGen.n_problems):
 
             data = self.dataGen.get_test_next()
-            R, v, logprobs, actions,idxs, batch, _= self.sess.run(summary,
-                                         feed_dict={self.env.input_data:data,
-                                                   self.decodeStep.dropout:0.0})
+            
+            feed_dict = {self.decodeStep.dropout: 0.0}
+            if self.args['task_name'] == 'vrp':
+                feed_dict[self.env.input_pnt] = data[0]
+                feed_dict[self.env.demand] = data[1]
+                feed_dict[self.env.time_matrix] = data[2]
+            else:
+                feed_dict[self.env.input_pnt] = data[0]
+                feed_dict[self.env.time_matrix] = data[1]
+                
+            R, v, logprobs, actions,idxs, batch, _= self.sess.run(summary, feed_dict=feed_dict)
             if eval_type=='greedy':
                 avg_reward.append(R)
                 R_ind0 = 0
@@ -374,7 +398,7 @@ class RLAgent(object):
         end_time = time.time() - start_time
 
         # Finished going through the iterator dataset.
-        self.prt.print_out('\nValidation overall avg_reward: {}'.format(np.mean(avg_reward)) )
+        self.prt.print_out('\nValidation overall avg travel time (s): {}'.format(np.mean(avg_reward)) )
         self.prt.print_out('Validation overall reward std: {}'.format(np.sqrt(np.var(avg_reward))) )
 
         self.prt.print_out("Finished evaluation with %d steps in %s." % (step\
@@ -382,25 +406,35 @@ class RLAgent(object):
 
         
     def evaluate_batch(self,eval_type='greedy'):
-        self.env.reset()
         if eval_type == 'greedy':
+            if not hasattr(self, 'val_summary_greedy'): 
+                self.val_summary_greedy = self.build_model(decode_type = "greedy" )
             summary = self.val_summary_greedy
             beam_width = 1
         elif eval_type == 'beam_search':
+            if not hasattr(self, 'val_summary_beam'):
+                self.val_summary_beam = self.build_model(decode_type = "beam_search")
             summary = self.val_summary_beam
             beam_width = self.args['beam_width']
             
             
         data = self.dataGen.get_test_all()
         start_time = time.time()
-        R, v, logprobs, actions,idxs, batch, _= self.sess.run(summary,
-                                     feed_dict={self.env.input_data:data,
-                                               self.decodeStep.dropout:0.0})
+        feed_dict = {self.decodeStep.dropout: 0.0}
+        if self.args['task_name'] == 'vrp':
+            feed_dict[self.env.input_pnt] = data[0]
+            feed_dict[self.env.demand] = data[1]
+            feed_dict[self.env.time_matrix] = data[2]
+        else:
+            feed_dict[self.env.input_pnt] = data[0]
+            feed_dict[self.env.time_matrix] = data[1]
+            
+        R, v, logprobs, actions,idxs, batch, _= self.sess.run(summary, feed_dict=feed_dict)
         R = np.concatenate(np.split(np.expand_dims(R,1) ,beam_width, axis=0),1 )
         R = np.amin(R,1, keepdims = False)
 
         end_time = time.time() - start_time
-        self.prt.print_out('Average of {} in batch-mode: {} -- std {} -- time {} s'.format(eval_type,\
+        self.prt.print_out('Avg travel time ({}) batch-mode: {:.1f}s -- std {:.1f}s -- eval_time {:.2f}s'.format(eval_type,\
             np.mean(R),np.sqrt(np.var(R)),end_time))        
         
     def inference(self, infer_type='batch'):
@@ -415,7 +449,14 @@ class RLAgent(object):
     def run_train_step(self):
         data = self.dataGen.get_train_next()
 
-        train_results = self.sess.run(self.train_step,
-                                 feed_dict={self.env.input_data:data,
-                                  self.decodeStep.dropout:self.args['dropout']})
+        feed_dict = {self.decodeStep.dropout: self.args['dropout']}
+        if self.args['task_name'] == 'vrp':
+            feed_dict[self.env.input_pnt] = data[0]
+            feed_dict[self.env.demand] = data[1]
+            feed_dict[self.env.time_matrix] = data[2]
+        else:
+            feed_dict[self.env.input_pnt] = data[0]
+            feed_dict[self.env.time_matrix] = data[1]
+            
+        train_results = self.sess.run(self.train_step, feed_dict=feed_dict)
         return train_results

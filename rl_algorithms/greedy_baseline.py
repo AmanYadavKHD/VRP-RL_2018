@@ -47,7 +47,7 @@ class GreedyBaseline(BaseAlgorithm):
         R_greedy_sg = tf.stop_gradient(R_greedy)
 
         # Actor loss: (R_stochastic - R_greedy) × log π
-        # When stochastic does worse than greedy (higher distance), this is positive,
+        # When stochastic does worse than greedy (higher travel time), this is positive,
         # so the gradient pushes AWAY from those actions.
         # When stochastic does better, this is negative, pushing TOWARD those actions.
         advantage = R_stoch - R_greedy_sg

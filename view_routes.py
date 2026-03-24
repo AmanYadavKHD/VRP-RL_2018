@@ -144,14 +144,14 @@ def load_custom_csv(csv_path, n_nodes, task_name):
     return data
 
 
-def build_route_text(prob_idx, test_data, idx_sequence, R, capacity, source_label):
+def build_route_text(prob_idx, test_data, tm_data, idx_sequence, R, capacity, source_label):
     """Build human-readable route text for one problem."""
     n_nodes = test_data.shape[1]
     n_cust = n_nodes - 1
     lines = []
 
     lines.append(f"\n{'═'*60}")
-    lines.append(f"  PROBLEM {prob_idx + 1}  —  Total Distance: {R[prob_idx]:.3f}")
+    lines.append(f"  PROBLEM {prob_idx + 1}  —  Total Travel Time: {R[prob_idx]:.1f}s")
     lines.append(f"  Source: {source_label}, row {prob_idx + 1}")
     lines.append(f"{'═'*60}")
     lines.append(f"  Depot at: ({test_data[prob_idx, n_cust, 0]:.3f}, {test_data[prob_idx, n_cust, 1]:.3f})")
@@ -170,10 +170,17 @@ def build_route_text(prob_idx, test_data, idx_sequence, R, capacity, source_labe
     lines.append(f"\n  Routes for Driver  (vehicle capacity: {capacity}):")
     route_num = 1
     current_load = 0
+    current_trip_time = 0.0
     route_nodes = []
+    prev_node = n_cust  # Start at depot
 
     for step in range(idx_sequence.shape[1]):
         node_idx = int(idx_sequence[prob_idx, step])
+        
+        # Add travel time for this step
+        if prev_node != node_idx:
+            current_trip_time += tm_data[prob_idx, prev_node, node_idx]
+
         if node_idx == n_cust:
             if route_nodes:
                 node_names = [f"C{n+1}" for n in route_nodes]
@@ -184,15 +191,23 @@ def build_route_text(prob_idx, test_data, idx_sequence, R, capacity, source_labe
                 lines.append(f"  Trip {route_num}:  Depot --> {' --> '.join(node_names)} --> Depot")
                 if load_str:
                     lines.append(f"               Load: {load_str}")
+                lines.append(f"               Time: {current_trip_time:.1f}s")
                 route_num += 1
                 route_nodes = []
                 current_load = 0
+                current_trip_time = 0.0
         else:
             route_nodes.append(node_idx)
             if test_data.shape[2] == 3:
                 current_load += int(test_data[prob_idx, node_idx, 2])
+        
+        prev_node = node_idx
 
     if route_nodes:
+        # If sequence ended without returning to depot, add return time manually
+        if prev_node != n_cust:
+            current_trip_time += tm_data[prob_idx, prev_node, n_cust]
+
         node_names = [f"C{n+1}" for n in route_nodes]
         demands = [int(test_data[prob_idx, n, 2]) for n in route_nodes] if test_data.shape[2] == 3 else []
         demands_str = " + ".join(str(d) for d in demands) if demands else "N/A"
@@ -201,6 +216,7 @@ def build_route_text(prob_idx, test_data, idx_sequence, R, capacity, source_labe
         lines.append(f"  Trip {route_num}:  Depot --> {' --> '.join(node_names)} --> Depot")
         if load_str:
             lines.append(f"               Load: {load_str}")
+        lines.append(f"               Time: {current_trip_time:.1f}s")
         route_num += 1
 
     lines.append(f"\n  Total trips made: {route_num - 1}")
@@ -264,7 +280,7 @@ def save_route_map(test_data, idx_sequence, R, n_show, save_path):
         ax.annotate('DEPOT', (dx, dy), textcoords="offset points",
                    xytext=(0, 12), ha='center', fontsize=8, fontweight='bold', color='darkred')
 
-        ax.set_title(f'Problem {prob_idx+1}  (row {prob_idx+1})\nDist: {R[prob_idx]:.3f}',
+        ax.set_title(f'Problem {prob_idx+1}  (row {prob_idx+1})\nTravel Time: {R[prob_idx]:.1f}s',
                     fontsize=9, fontweight='bold')
         ax.set_xlim(-0.05, 1.05)
         ax.set_ylim(-0.05, 1.05)
@@ -365,20 +381,39 @@ def run_inference_and_get_routes(args=None):
             sess.close()
             return
         source_label = os.path.basename(csv_path)
+        # Extract components for feed_dict
+        coords_data = test_data[:, :, :2]
+        if test_data.shape[2] == 3:
+            demand_data = test_data[:, :, 2]
+        else:
+            demand_data = np.zeros((test_data.shape[0], test_data.shape[1]), dtype=np.float32)
+        # Compute time matrix on-the-fly for CSV data
+        from VRP.vrp_utils import compute_time_matrix
+        tm_data = np.array([compute_time_matrix(c) for c in coords_data], dtype=np.float32)
     else:
-        test_data = dataGen.get_test_all()
-        source_label = f"data/vrp-size-{test_data.shape[0]}-len-{test_data.shape[1]}-test.txt"
+        raw_data = dataGen.get_test_all()
+        if args['task_name'] == 'vrp':
+            coords_data, demand_data, tm_data = raw_data
+            # Reconstruct combined test_data [N, n_nodes, 3] for route visualization
+            test_data = np.concatenate([coords_data, np.expand_dims(demand_data, 2)], axis=2)
+        else:
+            coords_data, tm_data = raw_data
+            demand_data = np.zeros((coords_data.shape[0], coords_data.shape[1]), dtype=np.float32)
+            test_data = coords_data
+        source_label = f"OSRM test data ({coords_data.shape[0]} problems)"
 
-    n_problems = test_data.shape[0]
-    n_nodes = test_data.shape[1]
+    n_problems = coords_data.shape[0]
+    n_nodes = coords_data.shape[1]
     n_cust = n_nodes - 1
     capacity = args.get('capacity', 999)
 
     print(f"Running inference on {n_problems} problems...")
 
+    feed_dict = {agent.decodeStep.dropout: 0.0, env.input_pnt: coords_data, env.time_matrix: tm_data}
+    if hasattr(env, 'demand'):
+        feed_dict[env.demand] = demand_data
     R, v, logprobs, actions, idxs, batch, _ = sess.run(
-        agent.val_summary_greedy,
-        feed_dict={env.input_data: test_data, agent.decodeStep.dropout: 0.0}
+        agent.val_summary_greedy, feed_dict=feed_dict
     )
     idx_sequence = np.concatenate(idxs, axis=1)
 
@@ -392,13 +427,13 @@ def run_inference_and_get_routes(args=None):
     lines.append(f"Test source:  {source_label}")
     lines.append(f"Problems:     {n_problems}")
     lines.append(f"{'='*60}")
-    lines.append(f"\nSUMMARY: Avg distance = {np.mean(R):.3f}  |  Std = {np.std(R):.3f}")
-    lines.append(f"         Best = {np.min(R):.3f}  |  Worst = {np.max(R):.3f}")
+    lines.append(f"\nSUMMARY: Avg travel time = {np.mean(R):.1f}s  |  Std = {np.std(R):.1f}s")
+    lines.append(f"         Best = {np.min(R):.1f}s  |  Worst = {np.max(R):.1f}s")
     lines.append(f"\nNOTE: 'Problem N' = row N in the test source file above.")
     lines.append(f"      Each problem is an independent delivery scenario.")
 
     for prob_idx in range(n_problems):
-        lines.append(build_route_text(prob_idx, test_data, idx_sequence, R, capacity, source_label))
+        lines.append(build_route_text(prob_idx, test_data, tm_data, idx_sequence, R, capacity, source_label))
 
     with open(routes_txt_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(lines))
@@ -415,7 +450,7 @@ def run_inference_and_get_routes(args=None):
     print("  PREVIEW (first 2 problems):")
     print("="*60)
     for i in range(min(2, n_problems)):
-        print(build_route_text(i, test_data, idx_sequence, R, capacity, source_label))
+        print(build_route_text(i, test_data, tm_data, idx_sequence, R, capacity, source_label))
 
     sess.close()
 

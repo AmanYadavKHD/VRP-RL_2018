@@ -38,7 +38,7 @@ class AttentionVRPActor(object):
             logits: [batch_size x max_time]
         """
         # get the current demand and load values from environment
-        demand = env.demand
+        demand = env.demand_tiled
         load = env.load
         max_time = tf.shape(demand)[1]
 
@@ -50,7 +50,7 @@ class AttentionVRPActor(object):
 
         # embed load - demand
         # emb_ld:[batch_size*beam_width x max_time x hidden_dim]
-        emb_ld = self.emb_ld(tf.expand_dims(tf.tile(tf.expand_dims(load,1),[1,max_time])-
+        emb_ld = self.emb_ld(tf.expand_dims(tf.tile(tf.expand_dims(load,1), tf.stack([1, max_time]))-
                                               demand,2))
         # ld:[batch_size*beam_width x hidden_dim x max_time ] 
         ld = self.project_ld(emb_ld)
@@ -58,10 +58,10 @@ class AttentionVRPActor(object):
         # expanded_q,e: [batch_size x max_time x dim]
         e = self.project_ref(ref)
         q = self.project_query(query) #[batch_size x dim]
-        expanded_q = tf.tile(tf.expand_dims(q,1),[1,max_time,1])
+        expanded_q = tf.tile(tf.expand_dims(q,1), tf.stack([1,max_time,1]))
 
         # v_view:[batch_size x dim x 1]
-        v_view = tf.tile( self.v, [tf.shape(e)[0],1,1]) 
+        v_view = tf.tile( self.v, tf.stack([tf.shape(e)[0],1,1])) 
         
         # u : [batch_size x max_time x dim] * [batch_size x dim x 1] = 
         #       [batch_size x max_time]
@@ -118,7 +118,7 @@ class AttentionVRPCritic(object):
             logits: [batch_size x max_time]
         """
         # we need the first demand value for the critic
-        demand = env.input_data[:,:,-1]
+        demand = env.demand
         max_time = tf.shape(demand)[1]
 
         # embed demand and project it
@@ -131,10 +131,10 @@ class AttentionVRPCritic(object):
         # expanded_q,e: [batch_size x max_time x dim]
         e = self.project_ref(ref)
         q = self.project_query(query) #[batch_size x dim]
-        expanded_q = tf.tile(tf.expand_dims(q,1),[1,max_time,1])
+        expanded_q = tf.tile(tf.expand_dims(q,1), tf.stack([1,max_time,1]))
 
         # v_view:[batch_size x dim x 1]
-        v_view = tf.tile( self.v, [tf.shape(e)[0],1,1]) 
+        v_view = tf.tile( self.v, tf.stack([tf.shape(e)[0],1,1])) 
         
         # u : [batch_size x max_time x dim] * [batch_size x dim x 1] = 
         #       [batch_size x max_time]

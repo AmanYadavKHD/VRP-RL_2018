@@ -1,290 +1,224 @@
 import numpy as np
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
-import os
-import warnings
 import collections
+import json
+import math
+import os
 
+# ──────────────────────────────────────────────────────────────
+# Utility: compute Euclidean-based surrogate time matrix
+# ──────────────────────────────────────────────────────────────
+def compute_time_matrix(coords, speed_factor=600.0):
+    """Given [n_nodes x 2] coords in [0,1], return [n_nodes x n_nodes] time matrix (seconds).
+    speed_factor=600 means 1.0 unit = 600 seconds (~10 min)."""
+    n = len(coords)
+    mat = np.zeros((n, n), dtype=np.float32)
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                dx = coords[i][0] - coords[j][0]
+                dy = coords[i][1] - coords[j][1]
+                mat[i][j] = math.sqrt(dx*dx + dy*dy) * speed_factor
+    return mat
 
-def create_VRP_dataset(
-        n_problems,
-        n_cust,
-        data_dir,
-        seed=None,
-        data_type='train'):
-    '''
-    This function creates VRP instances and saves them on disk. If a file is already available,
-    it will load the file.
-    Input:
-        n_problems: number of problems to generate.
-        n_cust: number of customers in the problem.
-        data_dir: the directory to save or load the file.
-        seed: random seed for generating the data.
-        data_type: the purpose for generating the data. It can be 'train', 'val', or any string.
-    output:
-        data: a numpy array with shape [n_problems x (n_cust+1) x 3]
-        in the last dimension, we have x,y,demand for customers. The last node is for depot and 
-        it has demand 0.
-     '''
-
-    # set random number generator
-    n_nodes = n_cust +1
-    if seed is None:
-        rnd = np.random
-    else:
-        rnd = np.random.RandomState(seed)
-    
-    # build task name and datafiles
-    task_name = 'vrp-size-{}-len-{}-{}.txt'.format(n_problems, n_nodes,data_type)
-    fname = os.path.join(data_dir, task_name)
-
-    # create/load data
-    if os.path.exists(fname):
-        print('Loading dataset for {}...'.format(task_name))
-        data = np.loadtxt(fname,delimiter=' ')
-        data = data.reshape(-1, n_nodes,3)
-    else:
-        print('Creating dataset for {}...'.format(task_name))
-        # Generate a training set of size n_problems 
-        x = rnd.uniform(0,1,size=(n_problems,n_nodes,2))
-        d = rnd.randint(1,10,[n_problems,n_nodes,1])
-        d[:,-1]=0 # demand of depot
-        data = np.concatenate([x,d],2)
-        np.savetxt(fname, data.reshape(-1, n_nodes*3))
-
-    return data
 
 class DataGenerator(object):
-    def __init__(self, 
-                 args):
-
+    def __init__(self, args):
         '''
-        This class generates VRP problems for training and test
-        Inputs:
-            args: the parameter dictionary. It should include:
-                args['random_seed']: random seed
-                args['test_size']: number of problems to test
-                args['n_nodes']: number of nodes
-                args['n_cust']: number of customers
-                args['batch_size']: batchsize for training
-
+        Phase 1 DataGenerator for VRP with Time Matrices.
+        - Training: generates random coords each step (infinite diversity) 
+          + computes time matrix on-the-fly.
+        - Testing: loads fixed OSRM JSON dataset from data/ folder.
         '''
         self.args = args
-        self.rnd = np.random.RandomState(seed= args['random_seed'])
-        print('Created train iterator.')
-
-        # create test data
-        self.n_problems = args['test_size']
-        self.test_data = create_VRP_dataset(self.n_problems,args['n_cust'],'./data',
-            seed = args['random_seed']+1,data_type='test')
-
+        self.rnd = np.random.RandomState(seed=args.get('random_seed', 1234))
+        self.n_cust = args['n_cust']
+        self.n_nodes = args['n_nodes']
+        self.demand_max = args.get('demand_max', 9)
+        
+        # Load OSRM test dataset
+        dataset_path = os.path.join("data", f"osrm_vrp{self.n_cust}.json")
+        try:
+            with open(dataset_path, "r") as f:
+                self.dataset = json.load(f)
+        except Exception:
+            print(f"Warning: Could not load OSRM test dataset from {dataset_path}. Tests will use random data.")
+            self.dataset = []
+            
+        self.n_problems = max(len(self.dataset), args.get('test_size', 256))
         self.reset()
+        print(f"VRP DataGenerator ready. Train=random on-the-fly, Test={len(self.dataset)} OSRM instances.")
 
     def reset(self):
         self.count = 0
 
     def get_train_next(self):
-        '''
-        Get next batch of problems for training
-        Returns:
-            input_data: data with shape [batch_size x max_time x 3]
-        '''
+        """Generate a random training batch with on-the-fly time matrices."""
+        batch_size = self.args.get('batch_size', 128)
+        
+        input_pnt_batch = []
+        demand_batch = []
+        time_matrix_batch = []
+        
+        for _ in range(batch_size):
+            # Random coordinates in [0,1] — same as original code
+            coords = self.rnd.uniform(0, 1, size=(self.n_nodes, 2)).astype(np.float32)
+            
+            # Random demands for customers, depot=0
+            demands = np.zeros(self.n_nodes, dtype=np.float32)
+            demands[:self.n_cust] = self.rnd.randint(1, self.demand_max + 1, self.n_cust)
+            
+            # Compute time matrix on-the-fly from coordinates
+            tm = compute_time_matrix(coords)
+            
+            input_pnt_batch.append(coords)
+            demand_batch.append(demands)
+            time_matrix_batch.append(tm)
+                
+        return (np.array(input_pnt_batch, dtype=np.float32), 
+                np.array(demand_batch, dtype=np.float32), 
+                np.array(time_matrix_batch, dtype=np.float32))
 
-        input_pnt = self.rnd.uniform(0,1,
-            size=(self.args['batch_size'],self.args['n_nodes'],2))
-
-        demand = self.rnd.randint(1,10,[self.args['batch_size'],self.args['n_nodes']])
-        demand[:,-1]=0 # demand of depot
-
-        input_data = np.concatenate([input_pnt,np.expand_dims(demand,2)],2)
-
-        return input_data
-
- 
     def get_test_next(self):
-        '''
-        Get next batch of problems for testing
-        '''
-        if self.count<self.args['test_size']:
-            input_pnt = self.test_data[self.count:self.count+1]
-            self.count +=1
+        """Get next test instance from fixed OSRM dataset."""
+        if self.dataset and self.count < len(self.dataset):
+            inst = self.dataset[self.count]
+            self.count += 1
+            coords = np.array(inst["coordinates"], dtype=np.float32)
+            demands = np.array(inst["demands"], dtype=np.float32)
+            tm = np.array(inst["time_matrix"], dtype=np.float32)
+            return (coords[np.newaxis], demands[np.newaxis], tm[np.newaxis])
         else:
-            warnings.warn("The test iterator reset.") 
+            # Fallback: random test instance
             self.count = 0
-            input_pnt = self.test_data[self.count:self.count+1]
-            self.count +=1
-
-        return input_pnt
+            coords = self.rnd.uniform(0, 1, size=(self.n_nodes, 2)).astype(np.float32)
+            demands = np.zeros(self.n_nodes, dtype=np.float32)
+            demands[:self.n_cust] = self.rnd.randint(1, self.demand_max + 1, self.n_cust)
+            tm = compute_time_matrix(coords)
+            return (coords[np.newaxis], demands[np.newaxis], tm[np.newaxis])
 
     def get_test_all(self):
-        '''
-        Get all test problems
-        '''
-        return self.test_data
-    
+        """Get all test instances as a single batch."""
+        test_size = self.args.get('test_size', 256)
+        if self.dataset:
+            instances = self.dataset[:test_size]
+            coords = np.array([i["coordinates"] for i in instances], dtype=np.float32)
+            demands = np.array([i["demands"] for i in instances], dtype=np.float32)
+            tms = np.array([i["time_matrix"] for i in instances], dtype=np.float32)
+            return (coords, demands, tms)
+        else:
+            # Fallback: generate random test batch
+            coords = self.rnd.uniform(0, 1, size=(test_size, self.n_nodes, 2)).astype(np.float32)
+            demands = np.zeros((test_size, self.n_nodes), dtype=np.float32)
+            for i in range(test_size):
+                demands[i, :self.n_cust] = self.rnd.randint(1, self.demand_max + 1, self.n_cust)
+            tms = np.array([compute_time_matrix(c) for c in coords], dtype=np.float32)
+            return (coords, demands, tms)
 
-class State(collections.namedtuple("State",
-                                        ("load",
-                                         "demand",
-                                         'd_sat',
-                                         "mask"))):
+
+# ──────────────────────────────────────────────────────────────
+# VRP Environment State
+# ──────────────────────────────────────────────────────────────
+class State(collections.namedtuple("State", ("load", "demand", "d_sat", "mask"))):
     pass
     
 class Env(object):
-    def __init__(self,
-                 args):
-        '''
-        This is the environment for VRP.
-        Inputs: 
-            args: the parameter dictionary. It should include:
-                args['n_nodes']: number of nodes in VRP
-                args['n_custs']: number of customers in VRP
-                args['input_dim']: dimension of the problem which is 2
-        '''
+    def __init__(self, args):
         self.capacity = args['capacity']
         self.n_nodes = args['n_nodes']
         self.n_cust = args['n_cust']
         self.input_dim = args['input_dim']
-        self.input_data = tf.placeholder(tf.float32,\
-            shape=[None,self.n_nodes,self.input_dim])
-
-        self.input_pnt = self.input_data[:,:,:2]
-        self.demand = self.input_data[:,:,-1]
+        
+        # Placeholders
+        self.input_pnt = tf.placeholder(tf.float32, shape=[None, self.n_nodes, 2])
+        self.demand = tf.placeholder(tf.float32, shape=[None, self.n_nodes])
+        self.time_matrix = tf.placeholder(tf.float32, shape=[None, self.n_nodes, self.n_nodes])
+        
         self.batch_size = tf.shape(self.input_pnt)[0] 
         
-    def reset(self,beam_width=1):
-        '''
-        Resets the environment. This environment might be used with different decoders. 
-        In case of using with beam-search decoder, we need to have to increase
-        the rows of the mask by a factor of beam_width.
-        '''
+    def reset(self, batch_size, beam_width=1):
+        self.beam_width = tf.cast(beam_width, tf.int32)
+        self.batch_beam = tf.cast(batch_size, tf.int32) * self.beam_width
 
-        # dimensions
-        self.beam_width = beam_width
-        self.batch_beam = self.batch_size * beam_width
+        self.demand_tiled = tf.tile(self.demand, tf.stack([self.beam_width, 1]))
+        self.load = tf.fill(tf.stack([self.batch_beam]), tf.cast(self.capacity, tf.float32))
 
-        self.input_pnt = self.input_data[:,:,:2]
-        self.demand = self.input_data[:,:,-1]
+        self.mask = tf.concat([
+            tf.cast(tf.equal(self.demand_tiled, 0), tf.float32)[:, :-1],
+            tf.ones(tf.stack([self.batch_beam, 1]))
+        ], 1)
 
-        # modify the self.input_pnt and self.demand for beam search decoder
-#         self.input_pnt = tf.tile(self.input_pnt, [self.beam_width,1,1])
+        return State(load=self.load, demand=self.demand_tiled, 
+                     d_sat=tf.zeros(tf.stack([self.batch_beam, self.n_nodes])), mask=self.mask)
 
-        # demand: [batch_size * beam_width, max_time]
-        # demand[i] = demand[i+batchsize]
-        self.demand = tf.tile(self.demand, [self.beam_width,1])
-
-        # load: [batch_size * beam_width]
-        self.load = tf.ones([self.batch_beam])*self.capacity
-
-        # create mask
-        self.mask = tf.zeros([self.batch_size*beam_width,self.n_nodes],
-                dtype=tf.float32)
-
-        # update mask -- mask if customer demand is 0 and depot
-        self.mask = tf.concat([tf.cast(tf.equal(self.demand,0), tf.float32)[:,:-1],
-            tf.ones([self.batch_beam,1])],1)
-
-        state = State(load=self.load,
-                    demand = self.demand,
-                    d_sat = tf.zeros([self.batch_beam,self.n_nodes]),
-                    mask = self.mask )
-
-        return state
-
-    def step(self,
-             idx,
-             beam_parent=None):
-        '''
-        runs one step of the environment and updates demands, loads and masks
-        '''
-
-        # if the environment is used in beam search decoder
+    def step(self, idx, batch_size, beam_parent=None):
+        batch_size_int = tf.cast(batch_size, tf.int32)
         if beam_parent is not None:
-            # BatchBeamSeq: [batch_size*beam_width x 1]
-            # [0,1,2,3,...,127,0,1,...],
-            batchBeamSeq = tf.expand_dims(tf.tile(tf.cast(tf.range(self.batch_size), tf.int64),
-                                                 [self.beam_width]),1)
-            # batchedBeamIdx:[batch_size*beam_width]
-            batchedBeamIdx= batchBeamSeq + tf.cast(self.batch_size,tf.int64)*beam_parent
-            # demand:[batch_size*beam_width x sourceL]
-            self.demand= tf.gather_nd(self.demand,batchedBeamIdx)
-            #load:[batch_size*beam_width]
-            self.load = tf.gather_nd(self.load,batchedBeamIdx)
-            #MASK:[batch_size*beam_width x sourceL]
-            self.mask = tf.gather_nd(self.mask,batchedBeamIdx)
+            batch_tile = tf.reshape(self.beam_width, [1])
+            batchBeamSeq = tf.expand_dims(tf.tile(tf.range(batch_size_int), batch_tile), 1)
+            batchedBeamIdx = batchBeamSeq + batch_size_int * tf.cast(beam_parent, tf.int32)
+            self.demand_tiled = tf.gather_nd(self.demand_tiled, batchedBeamIdx)
+            self.load = tf.gather_nd(self.load, batchedBeamIdx)
+            self.mask = tf.gather_nd(self.mask, batchedBeamIdx)
+
+        BatchSequence = tf.expand_dims(tf.range(self.batch_beam), 1)
+        batched_idx = tf.concat([BatchSequence, tf.cast(idx, tf.int32)], 1)
+
+        demand_selected = tf.gather_nd(self.demand_tiled, batched_idx)
+        
+        new_load = self.load - demand_selected
+        d_sat = tf.minimum(self.demand_tiled, tf.expand_dims(self.load, 1))
+
+        self.demand_tiled = self.demand_tiled - \
+                            tf.scatter_nd(batched_idx, demand_selected, tf.shape(self.demand_tiled))
+                            
+        self.load = tf.where(tf.equal(tf.squeeze(idx, 1), self.n_nodes - 1), 
+                             tf.fill(tf.stack([self.batch_beam]), tf.cast(self.capacity, tf.float32)), 
+                             new_load)
+
+        self.mask = tf.concat([
+            tf.cast(tf.equal(self.demand_tiled, 0), tf.float32)[:, :-1],
+            tf.zeros(tf.stack([self.batch_beam, 1]))
+        ], 1)
+
+        self.mask = self.mask + tf.concat([
+            tf.zeros(tf.stack([self.batch_beam, self.n_cust])),
+            tf.cast(tf.equal(tf.reduce_sum(self.demand_tiled, 1), 0), tf.float32)[:, None]
+        ], 1)
+
+        return State(load=self.load, demand=self.demand_tiled, d_sat=d_sat, mask=self.mask)
 
 
-        BatchSequence = tf.expand_dims(tf.cast(tf.range(self.batch_beam), tf.int64), 1)
-        batched_idx = tf.concat([BatchSequence,idx],1)
-
-        # how much the demand is satisfied
-        d_sat = tf.minimum(tf.gather_nd(self.demand,batched_idx), self.load)
-
-        # update the demand
-        d_scatter = tf.scatter_nd(batched_idx, d_sat, tf.cast(tf.shape(self.demand),tf.int64))
-        self.demand = tf.subtract(self.demand, d_scatter)
-
-        # update load
-        self.load -= d_sat
-
-        # refill the truck -- idx: [10,9,10] -> load_flag: [1 0 1]
-        load_flag = tf.squeeze(tf.cast(tf.equal(idx,self.n_cust),tf.float32),1)
-        self.load = tf.multiply(self.load,1-load_flag) + load_flag *self.capacity
-
-        # mask for customers with zero demand
-        self.mask = tf.concat([tf.cast(tf.equal(self.demand,0), tf.float32)[:,:-1],
-                                          tf.zeros([self.batch_beam,1])],1)
-
-        # mask if load= 0 
-        # mask if in depot and there is still a demand
-
-        self.mask += tf.concat( [tf.tile(tf.expand_dims(tf.cast(tf.equal(self.load,0),
-            tf.float32),1), [1,self.n_cust]),                      
-            tf.expand_dims(tf.multiply(tf.cast(tf.greater(tf.reduce_sum(self.demand,1),0),tf.float32),
-                             tf.squeeze( tf.cast(tf.equal(idx,self.n_cust),tf.float32))),1)],1)
-
-        state = State(load=self.load,
-                    demand = self.demand,
-                    d_sat = d_sat,
-                    mask = self.mask )
-
-        return state
-
-def reward_func(sample_solution):
-    """The reward for the VRP task is defined as the 
-    negative value of the route length
-
-    Args:
-        sample_solution : a list tensor of size decode_len of shape [batch_size x input_dim]
-        demands satisfied: a list tensor of size decode_len of shape [batch_size]
-
-    Returns:
-        rewards: tensor of size [batch_size]
-
-    Example:
-        sample_solution = [[[1,1],[2,2]],[[3,3],[4,4]],[[5,5],[6,6]]]
-        sourceL = 3
-        batch_size = 2
-        input_dim = 2
-        sample_solution_tilted[ [[5,5]
-                                                    #  [6,6]]
-                                                    # [[1,1]
-                                                    #  [2,2]]
-                                                    # [[3,3]
-                                                    #  [4,4]] ]
+# ──────────────────────────────────────────────────────────────
+# Reward Function: OSRM Time Matrix Lookup
+# ──────────────────────────────────────────────────────────────
+def reward_func(idxs, time_matrix, env=None):
     """
-    # make init_solution of shape [sourceL x batch_size x input_dim]
+    Computes total travel time by looking up step-by-step costs in the time_matrix.
+    Route: depot -> idx[0] -> idx[1] -> ... -> idx[-1] -> depot
+    """
+    batch_size = tf.shape(time_matrix)[0]
+    n_nodes = tf.shape(time_matrix)[1]
+    total_time = tf.constant(0.0)
+    
+    batch_seq = tf.expand_dims(tf.range(batch_size), 1)
+    depot_idx = tf.fill(tf.stack([batch_size, 1]), n_nodes - 1)
+    
+    if isinstance(idxs, list):
+        for t in range(len(idxs)):
+            idx_from = depot_idx if t == 0 else idxs[t-1]
+            idx_to = idxs[t]
+            gather_coords = tf.concat([batch_seq, tf.cast(idx_from, tf.int32), tf.cast(idx_to, tf.int32)], 1)
+            total_time += tf.gather_nd(time_matrix, gather_coords)
+            
+        # Return to depot
+        gather_final = tf.concat([batch_seq, tf.cast(idxs[-1], tf.int32), tf.cast(depot_idx, tf.int32)], 1)
+        total_time += tf.gather_nd(time_matrix, gather_final)
 
+    # CRITICAL: Penalize unserved demand heavily so the agent doesn't "cheat" by staying at the depot
+    if env is not None:
+        unserved_penalty = tf.reduce_sum(env.demand_tiled, 1) * 10000.0
+        total_time += unserved_penalty
 
-    # make sample_solution of shape [sourceL x batch_size x input_dim]
-    sample_solution = tf.stack(sample_solution,0)
-
-    sample_solution_tilted = tf.concat((tf.expand_dims(sample_solution[-1],0),
-         sample_solution[:-1]),0)
-    # get the reward based on the route lengths
-
-
-    route_lens_decoded = tf.reduce_sum(tf.pow(tf.reduce_sum(tf.pow(\
-        (sample_solution_tilted - sample_solution) ,2), 2) , .5), 0)
-    return route_lens_decoded 
-
+    return total_time

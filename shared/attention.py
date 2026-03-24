@@ -33,10 +33,10 @@ class Attention(object):
         # expanded_q,e: [batch_size x max_time x dim]
         e = self.project_ref(ref)
         q = self.project_query(query) #[batch_size x dim]
-        expanded_q = tf.tile(tf.expand_dims(q,1),[1,tf.shape(e)[1],1])
+        expanded_q = tf.tile(tf.expand_dims(q,1), tf.stack([1,tf.shape(e)[1],1]))
 
         # v_view:[batch_size x dim x 1]
-        v_view = tf.tile( self.v, [tf.shape(e)[0],1,1]) 
+        v_view = tf.tile( self.v, tf.stack([tf.shape(e)[0],1,1])) 
         
         # u : [batch_size x max_time x dim] * [batch_size x dim x 1] = 
         #       [batch_size x max_time]
