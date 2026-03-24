@@ -1,0 +1,44 @@
+# Implementation Roadmap: Dynamic Multi-Agent VRP with Real-World Constraints
+
+This plan outlines the architecture for upgrading the pure CVRP codebase into a state-of-the-art **Online Real-Time Routing Engine**.
+
+## Phase 1: Simultaneous Multi-Agent Routing & Makespan Optimization
+Currently, the codebase routes one sequential path. We must convert the Environment to support multiple parallel vehicles.
+
+* **Modifying the Environment ([VRP/vrp_utils.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py))**:
+  * Instead of tracking a single [load](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py#322-334) variable, track an array of vehicles `[v1_load, v2_load, ...]`.
+  * Track an array of `vehicle_clocks` so the system knows which vehicle is currently acting.
+  * Update the **Masking Logic**: If a vehicle is active, it only masks nodes based on *its* specific load.
+* **Modifying the Reward ([VRP/vrp_utils.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py))**:
+  * Change [reward_func](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#253-290) to calculate the individual Euclidean distance for *each* vehicle.
+  * `Reward R = max(distance_v1, distance_v2, ...)` (Makespan). This forces the RL agent to balance the distances evenly instead of making one truck do all the work.
+
+## Phase 2: Introducing Time Windows (VRPTW)
+We need to add strict deadlines to the static customers.
+
+* **Updating the Data Generator**:
+  * Customers now receive three extra variables: `[ready_time, due_date, service_time]`.
+* **Updating the Mask**:
+  * The mask must dynamically block customers whose `due_date` has already passed relative to the acting vehicle's specific `vehicle_clock`.
+  * If the vehicle arrives before `ready_time`, the `vehicle_clock` must artificially fast-forward (wait time).
+
+## Phase 3: The Dynamic Disruption Engine (Online Routing)
+This addresses the issue of "offline" pre-generation. The RL agent will act in real-time, handling cancellations and traffic.
+
+* **Creating `DynamicEnv` (The Disruption Simulator)**:
+  * While the `decode_len` loop is running, the environment has random probabilities to trigger events:
+    * **Cancellations:** A previously valid target customer's demand instantly becomes `0` and is masked permanently.
+    * **New Orders:** A new `[x,y]` coordinate and demand instantly unmasks and appears on the board.
+    * **Traffic:** The Euclidean math dynamically adds a heavy penalty multiplier to specific regions of the grid, mimicking sudden congestion.
+* **Why RL wins here:** Traditional solvers (like Gurobi) break when a node disappears mid-route. The Attention mechanism just takes a new "glimpse" at the board and instantly points to the new mathematically optimal node.
+
+## Phase 4: Graph Neural Networks (Real-World Embedding)
+Replacing the 2D grid with actual street networks.
+
+* **Upgrading the Neural Network ([VRP/vrp_attention.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_attention.py) & [shared/embeddings.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/shared/embeddings.py))**:
+  * Rip out `LinearEmbedding`.
+  * Input a static Adjacency Matrix representing asymmetric city streets.
+  * Build a Graph Convolutional Network (GCN) or Graph Attention Network (GAT) layer to encode the nodes so the Actor knows that Node B is actually a 10-minute detour from Node A, even if they look physically close.
+
+---
+**Testing & Validation:** At the end of each phase, we will evaluate the trained models over `test_size=1000` simulated episodes to generate performance benchmarks for the publication.

@@ -2,6 +2,7 @@ import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
 import numpy as np
 import time
+import os
 from shared.embeddings import LinearEmbedding
 from shared.decode_step import RNNDecodeStep
 
@@ -319,9 +320,17 @@ class RLAgent(object):
         self.load_model()
 
     def load_model(self):
-        latest_ckpt = tf.train.latest_checkpoint(self.args['load_path'])
-        if latest_ckpt is not None:
+        load_path = self.args['load_path']
+        if os.path.isdir(load_path):
+            latest_ckpt = tf.train.latest_checkpoint(load_path)
+        else:
+            latest_ckpt = load_path  # Assume it's a specific checkpoint prefix
+
+        if latest_ckpt is not None and latest_ckpt != "":
+            self.prt.print_out("Restoring from: {}".format(latest_ckpt))
             self.saver.restore(self.sess, latest_ckpt)
+        else:
+            self.prt.print_out("WARNING: No checkpoint loaded! Using random weights.")
             
     def evaluate_single(self,eval_type='greedy'):
         start_time = time.time()

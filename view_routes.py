@@ -167,7 +167,7 @@ def build_route_text(prob_idx, test_data, idx_sequence, R, capacity, source_labe
         suffix = "  <- vehicles start/end here" if node == n_cust else ""
         lines.append(f"  {label:<8} {x:>8.3f} {y:>8.3f} {d:>8}{suffix}")
 
-    lines.append(f"\n  Routes for Drivers  (vehicle capacity: {capacity}):")
+    lines.append(f"\n  Routes for Driver  (vehicle capacity: {capacity}):")
     route_num = 1
     current_load = 0
     route_nodes = []
@@ -181,7 +181,7 @@ def build_route_text(prob_idx, test_data, idx_sequence, R, capacity, source_labe
                 demands_str = " + ".join(str(d) for d in demands) if demands else "N/A"
                 load_str = f"{demands_str} = {current_load}/{capacity}" if demands else ""
                 lines.append(f"")
-                lines.append(f"  Vehicle {route_num}:  Depot --> {' --> '.join(node_names)} --> Depot")
+                lines.append(f"  Trip {route_num}:  Depot --> {' --> '.join(node_names)} --> Depot")
                 if load_str:
                     lines.append(f"               Load: {load_str}")
                 route_num += 1
@@ -198,12 +198,12 @@ def build_route_text(prob_idx, test_data, idx_sequence, R, capacity, source_labe
         demands_str = " + ".join(str(d) for d in demands) if demands else "N/A"
         load_str = f"{demands_str} = {current_load}/{capacity}" if demands else ""
         lines.append(f"")
-        lines.append(f"  Vehicle {route_num}:  Depot --> {' --> '.join(node_names)} --> Depot")
+        lines.append(f"  Trip {route_num}:  Depot --> {' --> '.join(node_names)} --> Depot")
         if load_str:
             lines.append(f"               Load: {load_str}")
         route_num += 1
 
-    lines.append(f"\n  Total vehicles used: {route_num - 1}")
+    lines.append(f"\n  Total trips made: {route_num - 1}")
     return "\n".join(lines)
 
 

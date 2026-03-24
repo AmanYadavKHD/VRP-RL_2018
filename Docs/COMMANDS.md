@@ -141,3 +141,22 @@ Multiple trainings of the same task create separate folders. The one with the la
 | `custom_testing/` | Your own CSV test files go here |
 | `custom_testing/README.md` | How to build custom CSV |
 | `logs/*/model_info.txt` | Per-model CSV format + commands |
+
+
+
+
+
+
+#Testing multiple RL Models
+1. REINFORCE (The Baseline)
+bash
+python main.py --task vrp20 --rl_model reinforce --n_train 30000 --batch_size 32 --test_size 25 --n_glimpses 1
+2. A2C (Fast & Stable)
+bash
+python main.py --task vrp20 --rl_model a2c --n_train 30000 --batch_size 32 --test_size 25 --n_glimpses 1
+3. PPO (Advanced learning)
+bash
+python main.py --task vrp20 --rl_model ppo --n_train 30000 --batch_size 32 --test_size 25 --n_glimpses 1
+4. Greedy Baseline (The Routing Specialist)
+bash
+python main.py --task vrp20 --rl_model greedy_baseline --n_train 30000 --batch_size 32 --test_size 25 --n_glimpses 1

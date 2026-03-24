@@ -1,0 +1,97 @@
+# Comprehensive Guide to VRP-RL Codebase
+
+This document provides a detailed breakdown of the Vehicle Routing Problem (VRP) Reinforcement Learning codebase, explaining the architecture, the training process, and providing explicit instructions on how to modify the code for future experiments.
+
+---
+
+## 1. High-Level Architecture
+The codebase separates the task environments (TSP/VRP) from the core Reinforcement Learning (RL) model. 
+* **[main.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/main.py)**: The entry point. Handles arguments matching, environment loading, agent initialization, and the main training loop.
+* **[configs.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/configs.py)**: Manages all hyperparameters and command-line arguments.
+* **[VRP/vrp_utils.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py)**: Contains the core logic for the Vehicle Routing Problem (Environment, State representation, Constraints/Masking, and Reward Function).
+* **[model/attention_agent.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py)**: The neural network brain. It maps out the Actor (Encoder-Decoder) and the Critic, handling graph building and loss computations.
+* **`rl_algorithms/`**: Contains modular implementations of the RL loss functions, like REINFORCE and A2C.
+
+---
+
+## 2. Where is What?
+
+### A. Environment & States
+**File:** [VRP/vrp_utils.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py)
+The [Env](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#133-252) class acts as the reinforcement learning environment. 
+* **State Representation:** Defined by a Python `namedtuple` called [State](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#126-132) containing:
+  * [load](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py#321-325): The current remaining capacity of the vehicle.
+  * `demand`: The remaining unfulfilled demand for all customers.
+  * `d_sat`: How much demand was satisfied in the last step.
+  * `mask`: A binary array indicating which nodes the agent is currently ALMOST ALLOWED or NOT ALLOWED to visit.
+* **State Updates (`Env.step()`):** When the agent picks a node (`idx`), the environment calculates how much demand is fulfilled (`d_sat`), deducts it from the node's demand and the vehicle's load. If the chosen node is the Depot, it refills the vehicle's capacity.
+
+### B. Constraints & Masking
+**File:** [VRP/vrp_utils.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py) within `Env.step()`
+Constraints in sequence-to-sequence RL models are handled via **masking**. You mask out invalid moves so the model has 0% probability of taking them. The current constraints mask a node if:
+1. The customer's demand is 0 (already fulfilled).
+2. The vehicle load is 0 (must go to the depot).
+3. The current location is the depot, but there is still demand left across customers (prevents the model from staying at the depot forever).
+
+### C. Reward Function
+**File:** [VRP/vrp_utils.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py) ([reward_func](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#253-290) method)
+The reward function calculates the Euclidean distance between all consecutively visited nodes in the sampled route.
+* **What affects it:** The sequence of `x,y` coordinates the model outputs.
+* **The Goal:** The model minimizes the total distance driven. Since RL maximizes rewards, the true reward is technically the *negative* tour length (or it's computed as a loss and minimized; in the code, `R` is the tour length and it is minimized during optimization: [(R - v) * logprobs](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#133-252) where a smaller `R` creates a gradient push).
+
+### D. The Optimization Model (Actor and Critic)
+**File:** [model/attention_agent.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py) ([RLAgent](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py#8-413) class)
+* **The Actor:** Uses an Encoder-Decoder architecture.
+  * *Encoder:* Simply linearly embeds the raw [(x, y)](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#133-252) coordinates of the nodes ([shared/embeddings.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/shared/embeddings.py)).
+  * *Decoder:* An RNN (LSTM layers in [shared/decode_step.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/shared/decode_step.py)) that steps through time. At each step, it uses an Attention Mechanism (`clAttentionActor`) to look at all available nodes (factoring in dynamic context like demand and load) and outputs a probability distribution over the next nodes to visit.
+* **The Critic:** 
+  * Calculates a baseline to reduce the variance of the gradients. It processes the entire sequence and predicts what the final tour length `v` will be.
+  * Located in [build_model](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py#80-265) under `with tf.variable_scope("Critic")`. It encodes the inputs and uses Dense layers to output a single scalar `v`.
+
+### E. Training Process
+**File:** [main.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/main.py)
+1. Initializes [DataGenerator](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#57-124) (creates random batches of nodes) and [Env](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#133-252).
+2. Initializes the [RLAgent](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py#8-413) and specifically the chosen `rl_algorithm` (e.g., REINFORCE from [rl_algorithms/reinforce.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/rl_algorithms/reinforce.py)).
+3. Loops for [n_train](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py#406-413) steps.
+4. Generates a random batch of cities and demands: `dataGen.get_train_next()`.
+5. Calls `agent.run_train_step()`.
+   * The model does a forward pass, selecting actions probabilistically.
+   * Calculates the `actor_loss` (Policy Gradient: `mean((Reward - Baseline) * logprobs)`).
+   * Calculates `critic_loss` (MSE between `Reward` and `Baseline`).
+   * Updates weights using the `AdamOptimizer`.
+
+---
+
+## 3. Guide for Future Code Modifications
+
+Here is exactly how to implement your proposed changes.
+
+### A. Modifying the Reward Function (e.g., Minimizing Number of Vehicles)
+Currently, [reward_func](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#253-290) only penalizes the Euclidean distance. To make the model minimize the number of vehicles, you must penalize it every time it visits the depot.
+* **Where to change:** [VRP/vrp_utils.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py) inside [reward_func(sample_solution)](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#253-290).
+* **How to change:** The `sample_solution` contains the sequence of nodes visited. You can count how many times the Depot node (index `n_nodes - 1`) appears in the sequence (excluding the automatic end-of-route return).
+* **Code concept:**
+  ```python
+  # Add a penalty for depot visits
+  depot_visists = tf.reduce_sum(tf.cast(tf.equal(sample_idxs, env.n_nodes - 1), tf.float32), axis=0)
+  vehicle_penalty = depot_visits * vehicle_penalty_weight
+  route_lens_decoded = route_lens_decoded + vehicle_penalty
+  ```
+  *(Note: You will need to pass `sample_idxs` directly into the reward function or extract it from the environment state tracking).*
+
+### B. Ensuring All Customer Nodes are Visited
+The model sometimes fails to route to some nodes because the decoding loop terminates prematurely or the mask allows early termination.
+* **Where to change:** First, [main.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/main.py) / [configs.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/configs.py). The `decode_len` hyperparameter determines how many steps the decoder takes. If `decode_len` is too short, testing will stop before all demand is fulfilled. Increase `--decode_len` (e.g., from 40 to 60 for VRP20).
+* **Where to change:** [VRP/vrp_utils.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py) inside `Env.step()`. Ensure that the Depot is heavily masked (disallowed) if the total remaining demand is > 0, EXCEPT when the vehicle load is exactly 0 (it must restock). Currently, the mask is:
+  ```python
+  self.mask += tf.concat( [tf.tile(tf.expand_dims(tf.cast(tf.equal(self.load,0), tf.float32),1), [1,self.n_cust]),                      
+      tf.expand_dims(tf.multiply(tf.cast(tf.greater(tf.reduce_sum(self.demand,1),0),tf.float32),
+                       tf.squeeze( tf.cast(tf.equal(idx,self.n_cust),tf.float32))),1)],1)
+  ```
+  Make sure this logic correctly forcefully zeroes out the probability of selecting the depot if `demand` > 0 and [load](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py#321-325) > 0. If the problem persists, you can artificially inject a massive negative reward (penalty) in [reward_func](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/VRP/vrp_utils.py#253-290) if `tf.reduce_sum(env.demand)` at the end of the episode is strictly greater than 0.
+
+### C. Improving the Optimization Model
+If you want to move beyond basic Sequence-to-Sequence + Attention, you have a few powerful avenues in the codebase:
+1. **Try Advanced RL Algorithms:** The codebase supports multiple algorithms. Try `python main.py --rl_model ppo` instead of the default `reinforce`. Proximal Policy Optimization (PPO) generally provides vastly superior and more stable optimization paths, allowing larger batch sizes and multiple epochs over the same rollout data.
+2. **Transformer Encoders:** Currently, the Encoder ([shared/embeddings.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/shared/embeddings.py)) just linearly projects the `x,y` features. You can modify [attention_agent.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py) to pass the embeddings through a stack of Transformer layers (Multi-Head Self-Attention). This allows the nodes to "talk to each other" before the decoding step begins, achieving much higher spatial awareness.
+3. **Graph Neural Networks (GNNs):** You can build a Graph Convolutional Network (GCN) step inside the Actor ([model/attention_agent.py](file:///c:/COLLEGE/SEM%20X/WORK/VRP-RL_2018/model/attention_agent.py)). Nodes can pass messages to their K-nearest neighbors based on spatial distances, vastly improving the context representation passed into `decoder_input`.

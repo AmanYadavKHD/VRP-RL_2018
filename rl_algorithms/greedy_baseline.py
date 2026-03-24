@@ -19,7 +19,7 @@ by Kool et al. (2019):
 
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
-from rl_algorithms.base import BaseAlgorithm
+from .base import BaseAlgorithm
 
 
 class GreedyBaseline(BaseAlgorithm):

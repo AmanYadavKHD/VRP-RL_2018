@@ -23,7 +23,7 @@ Reference:
 
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
-from rl_algorithms.base import BaseAlgorithm
+from .base import BaseAlgorithm
 
 
 class PPO(BaseAlgorithm):

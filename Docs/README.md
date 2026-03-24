@@ -491,3 +491,8 @@ os.environ['TF_USE_LEGACY_KERAS'] = '1'
 - **Paper:** [Reinforcement Learning for Solving the Vehicle Routing Problem](https://arxiv.org/abs/1802.04240v2) — Nazari et al., NeurIPS 2018
 - **Code structure inspired by:** [pemami4911/neural-combinatorial-rl-pytorch](https://github.com/pemami4911/neural-combinatorial-rl-pytorch)
 - **TF2 modernization, route visualization, and custom testing tools** added as part of coursework extensions
+
+
+
+
+#Constraints Are Missing so its sometimes forgot to go to some customers and also takes as much as vehicles as it want.
